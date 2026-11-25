@@ -208,7 +208,7 @@ describe('record e permessi', () => {
 
     const rel = await as('rep1').get(`/records/Accounts/${accountId}/related`);
     const byModule = Object.fromEntries(rel.body.map((r: any) => [`${r.module}.${r.field}`, r.total]));
-    expect(byModule).toEqual({ 'Contacts.account_id': 1, 'Opportunities.account_id': 1, 'Activities.account_id': 0 });
+    expect(byModule).toEqual({ 'Contacts.account_id': 1, 'Opportunities.account_id': 1, 'Activities.account_id': 0, 'SalesOrders.account_id': 0 });
 
     const upd = await as('rep1').patch(`/records/Opportunities/${opp.body.id}`, { data: { sales_stage: 'Chiusa vinta' } });
     expect(upd.body.data.sales_stage).toBe('Chiusa vinta');
@@ -542,5 +542,136 @@ describe('rapporti', () => {
     expect(await ensureStandardModules(pool)).toEqual([]);
     const list = await as('other').get('/reports');
     expect(list.body.filter((r: any) => r.name === 'Opportunità per fase di vendita')).toHaveLength(2);
+  });
+});
+
+describe('PDA e prodotti', () => {
+  let pda: Awaited<ReturnType<typeof provisionTenant>>;
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    pda = await provisionTenant(pool, {
+      slug: 'pda',
+      name: 'PDA',
+      admin: { email: 'admin@pda.test', password: PASSWORD, firstName: 'Ada', lastName: 'Pda' },
+    });
+    tokens.pdaAdmin = await login('pda', 'admin@pda.test');
+    for (const u of ['rep1', 'rep2']) {
+      await as('pdaAdmin').post('/admin/users', {
+        email: `${u}@pda.test`, password: PASSWORD, firstName: u, lastName: 'Pda', roleId: pda.roles.salesRep,
+      });
+      tokens[`pda_${u}`] = await login('pda', `${u}@pda.test`);
+    }
+    ids.account = (await as('pda_rep1').post('/records/Accounts', { data: { name: 'Hotel Prova' } })).body.id;
+  });
+
+  it('il catalogo prodotti è in sola lettura per le vendite', async () => {
+    const denied = await as('pda_rep1').post('/records/Products', { data: { name: 'X', unit_price: 1 } });
+    expect(denied.status).toBe(403);
+    const pv = await as('pdaAdmin').post('/records/Products', {
+      data: { name: 'Fotovoltaico 7 kWp', product_code: 'FV7', unit_price: 12105 },
+    });
+    expect(pv.status).toBe(201);
+    expect(pv.body.data).toMatchObject({ vat_rate: 22, unit: 'pz', active: true, product_type: 'Prodotto' });
+    ids.pv = pv.body.id;
+    ids.opt = (await as('pdaAdmin').post('/records/Products', { data: { name: 'Ottimizzatori', unit_price: 50, vat_rate: 10 } })).body.id;
+    const seen = await as('pda_rep1').get('/records/Products');
+    expect(seen.body.total).toBe(2);
+  });
+
+  it('numera le PDA e calcola i campi di sistema', async () => {
+    const a = await as('pda_rep1').post('/records/SalesOrders', { data: { subject: 'Hotel - FV', account_id: ids.account } });
+    expect(a.status).toBe(201);
+    const year = new Date().getFullYear();
+    expect(a.body.data.order_number).toBe(`${year}-00001`);
+    expect(a.body.label).toBe(`${year}-00001 Hotel - FV`);
+    expect(a.body.data).toMatchObject({ status: 'Bozza', subtotal: 0, vat_total: 0, grand_total: 0 });
+    expect(a.body.data.order_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    ids.order = a.body.id;
+    const b = await as('pda_rep2').post('/records/SalesOrders', { data: { subject: 'Altra', account_id: ids.account } });
+    expect(b.body.data.order_number).toBe(`${year}-00002`);
+    ids.order2 = b.body.id;
+
+    const forced = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { order_number: 'X', grand_total: 1 } });
+    expect(forced.status).toBe(400);
+    expect(Object.keys(forced.body.errors).sort()).toEqual(['grand_total', 'order_number']);
+  });
+
+  it('salva le righe con prezzi di listino, sconti e IVA e aggiorna i totali', async () => {
+    const put = await as('pda_rep1').put(`/records/SalesOrders/${ids.order}/lines`, {
+      lines: [
+        { productId: ids.pv, quantity: 1, discount: 5 },
+        { productId: ids.opt, quantity: 6, unitPrice: 50, discount: 5, vatRate: 22, description: 'Ottimizzatori SolarEdge' },
+        { description: 'Zavorre', quantity: 7, unitPrice: 120, discount: 5, vatRate: 0 },
+      ],
+    });
+    expect(put.status).toBe(200);
+    expect(put.body.lines.map((l: any) => [l.description, l.unitPrice, l.vatRate, l.net, l.vat])).toEqual([
+      ['Fotovoltaico 7 kWp', 12105, 22, 11499.75, 2529.95],
+      ['Ottimizzatori SolarEdge', 50, 22, 285, 62.7],
+      ['Zavorre', 120, 0, 798, 0],
+    ]);
+    expect(put.body.lines[0].productLabel).toBe('Fotovoltaico 7 kWp');
+    const rec = await as('pda_rep1').get(`/records/SalesOrders/${ids.order}`);
+    expect(rec.body.data).toMatchObject({ subtotal: 12582.75, vat_total: 2592.65, grand_total: 15175.4 });
+
+    // arrotondamento a mano: il totale si ricalcola
+    const adj = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { adjustment: -175.4 } });
+    expect(adj.body.data.grand_total).toBe(15000);
+    const hist = await as('pda_rep1').get(`/records/SalesOrders/${ids.order}/history`);
+    expect(hist.body[0].changes.grand_total).toEqual([15175.4, 15000]);
+
+    // sostituendo le righe i totali seguono, l'arrotondamento resta
+    const one = await as('pda_rep1').put(`/records/SalesOrders/${ids.order}/lines`, {
+      lines: [{ description: 'Sopralluogo', quantity: 1, unitPrice: 200, vatRate: 22 }],
+    });
+    expect(one.body.totals).toEqual({ net: 200, vat: 44, total: 244 });
+    const after = await as('pda_rep1').get(`/records/SalesOrders/${ids.order}`);
+    expect(after.body.data).toMatchObject({ subtotal: 200, vat_total: 44, grand_total: 68.6 });
+    expect((await as('pda_rep1').get(`/records/SalesOrders/${ids.order}/lines`)).body).toHaveLength(1);
+  });
+
+  it('valida le righe', async () => {
+    const other = await as('other').post('/records/Products', { data: { name: 'Altrui', unit_price: 1 } });
+    const bad = await as('pda_rep1').put(`/records/SalesOrders/${ids.order}/lines`, {
+      lines: [
+        { quantity: 1, unitPrice: 10 },
+        { description: 'Senza prezzo', quantity: 1 },
+        { productId: other.body.id, quantity: 1 },
+        { description: 'x', quantity: 0, unitPrice: 1 },
+      ],
+    });
+    expect(bad.status).toBe(400);
+    expect(Object.keys(bad.body.errors).sort()).toEqual(
+      expect.arrayContaining(['lines.3.quantity']),
+    );
+    const bad2 = await as('pda_rep1').put(`/records/SalesOrders/${ids.order}/lines`, {
+      lines: [{ quantity: 1, unitPrice: 10 }, { description: 'Senza prezzo', quantity: 1 }, { productId: other.body.id, quantity: 1 }],
+    });
+    expect(bad2.body.errors).toEqual({
+      'lines.0.description': 'descrizione obbligatoria',
+      'lines.1.unitPrice': 'prezzo obbligatorio',
+      'lines.2.productId': 'prodotto inesistente',
+    });
+    // le righe precedenti non sono state toccate
+    expect((await as('pda_rep1').get(`/records/SalesOrders/${ids.order}/lines`)).body).toHaveLength(1);
+    expect((await as('pda_rep1').put(`/records/Accounts/${ids.account}/lines`, { lines: [] })).status).toBe(404);
+  });
+
+  it('rispetta la visibilità delle PDA anche sulle righe', async () => {
+    expect((await as('pda_rep2').get(`/records/SalesOrders/${ids.order}/lines`)).status).toBe(403);
+    expect((await as('pda_rep2').put(`/records/SalesOrders/${ids.order}/lines`, { lines: [] })).status).toBe(403);
+    expect((await as('pdaAdmin').get(`/records/SalesOrders/${ids.order}/lines`)).status).toBe(200);
+    expect((await as('admin').get(`/records/SalesOrders/${ids.order}/lines`)).status).toBe(404);
+    // le PDA non si eliminano con il profilo vendite
+    expect((await as('pda_rep1').del(`/records/SalesOrders/${ids.order}`)).status).toBe(403);
+  });
+
+  it('i totali delle PDA si usano nei rapporti', async () => {
+    const r = await as('pdaAdmin').post('/reports/run', {
+      module: 'SalesOrders',
+      config: { columns: ['order_number', 'grand_total'], groupBy: { field: 'status' }, totals: [{ field: 'grand_total', fn: 'sum' }] },
+    });
+    expect(r.body.totals).toEqual({ count: 2, 'sum:grand_total': 68.6 });
   });
 });

@@ -25,7 +25,8 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   costruiscono dai metadati, quindi un campo o un modulo nuovo è subito utilizzabile.
 - **Campi personalizzati** di 16 tipi (testo, email, importo, data, elenco, collegamento a record, …)
   e **moduli personalizzati** creati dall'amministrazione.
-- **Moduli standard**: Aziende, Contatti, Opportunità e Attività, con relazioni e liste correlate.
+- **Moduli standard**: Aziende, Contatti, Opportunità, Attività, Prodotti e servizi e PDA, con relazioni e
+  liste correlate.
 - **Attività e calendario**: chiamate, appuntamenti, compiti ed email collegati ad aziende, contatti e
   opportunità; calendario mensile e settimanale filtrabile per utente; "Le mie attività" in panoramica
   (in ritardo, oggi, prossimi giorni) con completamento in un clic.
@@ -36,6 +37,12 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   massimi, grafico a barre o a torta ed esportazione per Excel (CSV) del dettaglio o del riepilogo.
   Un rapporto può essere privato o condiviso: chi lo apre vede solo i record e i campi consentiti dal suo
   profilo. Ogni azienda nuova parte con cinque rapporti di esempio.
+- **PDA (proposta di acquisto)** con i campi principali del modello vtenext: numero progressivo automatico
+  per anno (es. `2026-00001`), cliente, stato, categoria, pagamento e finanziamento, sopralluogo e
+  installazione. Le righe prendono prodotti dal catalogo (prezzo e IVA di listino modificabili) con quantità
+  e sconto; imponibile, IVA e totale sono calcolati dal server, con un arrotondamento modificabile a mano.
+  Versione stampabile con spazio per la firma del cliente. Il catalogo **Prodotti e servizi** è in sola
+  lettura per i profili diversi dall'amministratore.
 - **Storico modifiche** di ogni record (chi, quando, valore prima e dopo).
 - **Eventi in background** con outbox transazionale: ogni creazione, modifica o eliminazione scrive un
   evento nella stessa transazione; un worker li processa (`FOR UPDATE SKIP LOCKED`) e li passa ai
@@ -143,6 +150,7 @@ Tutte sotto `/api`, autenticate con `Authorization: Bearer <token>`.
 | `GET/PATCH/DELETE /records/:module/:id`    | scheda, modifica parziale, eliminazione        |
 | `GET /records/:module/:id/related`         | liste correlate                                |
 | `GET /records/:module/:id/history`         | storico modifiche                              |
+| `GET/PUT /records/:module/:id/lines`       | righe della PDA (la PUT le sostituisce tutte e ricalcola i totali) |
 | `GET/POST /reports`, `GET/PATCH/DELETE /reports/:id` | rapporti salvati                  |
 | `GET /reports/:id/run`, `POST /reports/run` | esegue un rapporto salvato o un'anteprima      |
 | `GET /reports/:id/export?part=rows\|summary` | CSV per Excel (dettaglio o riepilogo)       |

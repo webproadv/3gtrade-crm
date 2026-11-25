@@ -8,6 +8,7 @@ import { ChangePassword } from './pages/ChangePassword';
 import { Home } from './pages/Home';
 import { ListView } from './pages/ListView';
 import { Login } from './pages/Login';
+import { PrintView } from './pages/PrintView';
 import { RecordForm } from './pages/RecordForm';
 import { RecordView } from './pages/RecordView';
 import { ReportEditor } from './pages/reports/ReportEditor';
@@ -21,6 +22,7 @@ export function App() {
   if (!me) return <Login />;
   return (
     <Routes>
+      <Route path="m/:module/:id/print" element={<PrintView />} />
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="calendar" element={<Calendar />} />

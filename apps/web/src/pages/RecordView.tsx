@@ -4,6 +4,7 @@ import { api } from '../api';
 import { groupByBlock } from '../components/blocks';
 import { FieldValue } from '../components/FieldValue';
 import { formatDateTime } from '../components/format';
+import { LinesEditor } from '../components/LinesEditor';
 import { useSession } from '../session';
 import type { CrmRecord, ListResult } from '../types';
 
@@ -55,6 +56,12 @@ export function RecordView() {
       setError((e as Error).message);
     }
   };
+  const reload = () => {
+    api<CrmRecord>(`/records/${name}/${id}`).then(setRec).catch((e) => setError(e.message));
+    api<HistoryItem[]>(`/records/${name}/${id}/history`).then(setHistory).catch(() => undefined);
+  };
+  // nei documenti con righe i totali si mostrano sotto le righe, non come blocco a sé
+  const totalsBlock = mod.lineTotals && mod.fields.find((f) => f.name === mod.lineTotals!.total)?.block;
   const fieldLabel = (n: string) => (n === 'ownerId' ? 'Assegnato a' : mod.fields.find((f) => f.name === n)?.label ?? n);
 
   return (
@@ -78,6 +85,9 @@ export function RecordView() {
             >
               Segna come completata
             </button>
+          )}
+          {mod.hasLines && (
+            <button onClick={() => window.open(`/m/${name}/${id}/print`, '_blank')}>Stampa</button>
           )}
           {rec.permissions?.edit && (
             <button className="primary" onClick={() => nav(`/m/${name}/${id}/edit`)}>
@@ -106,7 +116,7 @@ export function RecordView() {
 
       {tab === 'details' && (
         <>
-          {groupByBlock(mod.fields).map(([block, fields]) => (
+          {groupByBlock(mod.fields.filter((f) => f.block !== totalsBlock || !mod.hasLines)).map(([block, fields]) => (
             <section key={block} className="card">
               <h2>{block}</h2>
               <dl className="fields">
@@ -121,6 +131,7 @@ export function RecordView() {
               </dl>
             </section>
           ))}
+          {mod.hasLines && <LinesEditor mod={mod} rec={rec} onSaved={reload} />}
           {related.map((r) => {
             const relMod = module(r.module);
             const cols =

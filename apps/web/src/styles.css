@@ -287,3 +287,38 @@ label.inline { display: flex; align-items: center; gap: 8px; }
 .legend li { display: flex; gap: 8px; align-items: center; }
 .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 @media (max-width: 800px) { .report-columns { grid-template-columns: 1fr; } }
+
+/* Righe dei documenti (PDA) */
+.table.lines td { vertical-align: top; }
+.table.lines tfoot td { border-top: none; padding-top: 4px; padding-bottom: 4px; }
+.table.lines tfoot tr:first-child td { border-top: 1px solid var(--border); padding-top: 10px; }
+.table.lines tfoot tr.grand td { font-weight: 600; font-size: 15px; }
+.table.lines input { width: 100%; min-width: 70px; }
+.table.lines input.num { text-align: right; max-width: 110px; }
+.table.lines .line-desc { min-width: 260px; }
+.table.lines .line-desc > * + * { margin-top: 4px; }
+.table.lines .line-actions { white-space: nowrap; }
+.table.lines .line-actions button { margin-left: 6px; font-size: 15px; }
+.table.lines .line-actions button:disabled { opacity: 0.3; }
+.lines-bar { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+
+/* Stampa */
+.print-doc { max-width: 900px; margin: 0 auto; padding: 24px; background: #fff; color: #111; }
+.print-actions { display: flex; gap: 8px; justify-content: flex-end; margin-bottom: 16px; }
+.print-head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #111; padding-bottom: 12px; margin-bottom: 16px; }
+.print-company { font-size: 18px; font-weight: 600; }
+.print-title { text-align: right; }
+.print-title h1 { margin: 0; font-size: 22px; }
+.print-block { margin-bottom: 16px; break-inside: avoid; }
+.print-block h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+.print-doc .table { background: #fff; }
+.print-doc .table th, .print-doc .table td { color: #111; }
+.print-signatures { display: flex; gap: 48px; margin-top: 48px; break-inside: avoid; }
+.print-signatures > div { flex: 1; font-size: 13px; color: #444; }
+.sign-line { border-bottom: 1px solid #111; height: 48px; margin-bottom: 4px; }
+@media print {
+  .no-print { display: none !important; }
+  body { background: #fff !important; }
+  .print-doc { padding: 0; max-width: none; }
+  @page { margin: 15mm; }
+}

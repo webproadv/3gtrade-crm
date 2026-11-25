@@ -15,6 +15,8 @@ import { OutboxWorker } from './events/outbox.worker';
 import { MetadataController } from './metadata/metadata.controller';
 import { MetadataService } from './metadata/metadata.service';
 import { CalendarController } from './records/calendar.controller';
+import { LinesController } from './records/lines.controller';
+import { LinesService } from './records/lines.service';
 import { RecordsController } from './records/records.controller';
 import { RecordsService } from './records/records.service';
 import { ReportsController } from './reports/reports.controller';
@@ -38,6 +40,7 @@ export class AppModule {
         MetadataController,
         RecordsController,
         CalendarController,
+        LinesController,
         ReportsController,
         AdminController,
         UsersController,
@@ -48,6 +51,7 @@ export class AppModule {
         ScopeService,
         MetadataService,
         RecordsService,
+        LinesService,
         ReportsService,
         AdminService,
         LoggingHandler,

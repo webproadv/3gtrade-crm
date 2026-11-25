@@ -31,8 +31,17 @@ export interface FieldOptions {
   module?: string;
   /** text: lunghezza massima */
   maxLength?: number;
-  /** valore proposto in creazione se il campo non viene indicato */
+  /** valore proposto in creazione se il campo non viene indicato ("$today" = data di oggi) */
   default?: unknown;
+  /** calcolato dal sistema (numero del documento, totali): non modificabile dagli utenti */
+  computed?: boolean;
+}
+
+/** Valore predefinito effettivo: "$today" diventa la data di oggi (AAAA-MM-GG, ora locale del server). */
+export function resolveDefault(v: unknown): unknown {
+  if (v !== '$today') return v;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 export interface FieldDef {

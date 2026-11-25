@@ -45,11 +45,23 @@ export async function insertModule(tx: Tx, tenantId: string, m: StandardModule, 
 }
 
 /**
- * Allinea i tenant esistenti ai moduli standard del codice: aggiunge i moduli
- * e i campi standard mancanti senza toccare quelli già presenti o personalizzati.
- * Un modulo nuovo eredita i permessi dei profili da `inheritPermissionsFrom`.
- * Restituisce l'elenco delle aggiunte, per il log.
+ * Nega ai profili le azioni in `restrictedActions`: al profilo indicato oppure, con null,
+ * a tutti i profili tranne "Amministratore".
  */
+async function restrictActions(tx: Tx, m: StandardModule, profileId: string | null) {
+  if (!m.restrictedActions?.length) return;
+  const sets = m.restrictedActions.map((a) => `can_${a} = false`).join(', ');
+  if (profileId) {
+    await tx.query(`UPDATE profile_module_permissions SET ${sets} WHERE module = $1 AND profile_id = $2`, [m.name, profileId]);
+  } else {
+    await tx.query(
+      `UPDATE profile_module_permissions SET ${sets}
+        WHERE module = $1 AND profile_id NOT IN (SELECT id FROM profiles WHERE name = 'Amministratore')`,
+      [m.name],
+    );
+  }
+}
+
 /** Rapporti di esempio condivisi, di proprietà dell'amministratore indicato. */
 async function insertDefaultReports(tx: Tx, tenantId: string, ownerId: string) {
   for (const r of DEFAULT_REPORTS) {
@@ -62,6 +74,12 @@ async function insertDefaultReports(tx: Tx, tenantId: string, ownerId: string) {
   await tx.query(`UPDATE tenants SET default_reports_at = now() WHERE id = $1`, [tenantId]);
 }
 
+/**
+ * Allinea i tenant esistenti ai moduli standard del codice: aggiunge i moduli
+ * e i campi standard mancanti senza toccare quelli già presenti o personalizzati.
+ * Un modulo nuovo eredita i permessi dei profili da `inheritPermissionsFrom`.
+ * Restituisce l'elenco delle aggiunte, per il log.
+ */
 export async function ensureStandardModules(pool: Pool): Promise<string[]> {
   const added: string[] = [];
   const tenants = (
@@ -93,6 +111,8 @@ export async function ensureStandardModules(pool: Pool): Promise<string[]> {
                  FROM profile_module_permissions WHERE module = $2`,
               [m.name, m.inheritPermissionsFrom],
             );
+            // il profilo "Amministratore" resta completo, gli altri ricevono le restrizioni del modulo
+            await restrictActions(tx, m, null);
           }
           added.push(`${t.slug}: modulo ${m.name}`);
           continue;
@@ -157,6 +177,7 @@ export async function provisionTenant(pool: Pool, t: NewTenant) {
          VALUES ($1, $2, $3, true, true, true, true), ($1, $4, $3, true, true, true, $5)`,
         [tenantId, adminProfile, m.name, salesProfile, m.name === 'Opportunities' || m.name === 'Activities'],
       );
+      await restrictActions(tx, m, salesProfile);
     }
 
     for (const [roleId, profileId] of [

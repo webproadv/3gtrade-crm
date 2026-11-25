@@ -35,6 +35,10 @@ export interface Module {
   labelFields: string[];
   sharing: 'private' | 'public_read' | 'public_readwrite';
   permissions?: Perm;
+  /** documento con righe (PDA) */
+  hasLines?: boolean;
+  /** nomi dei campi dei totali calcolati dalle righe */
+  lineTotals?: { net: string; vat: string; adjustment: string; total: string };
   fields: Field[];
 }
 
@@ -127,4 +131,18 @@ export interface ReportResult {
   groups: { key: string | null; label: string; count: number; totals: Record<string, number | null> }[] | null;
   hidden: string[];
   refs: Refs;
+}
+
+export interface DocLine {
+  id?: string;
+  productId: string | null;
+  productLabel?: string | null;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discount: number;
+  vatRate: number;
+  net?: number;
+  vat?: number;
+  total?: number;
 }

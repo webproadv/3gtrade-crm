@@ -5,6 +5,7 @@ import * as bcrypt from 'bcryptjs';
 import { Pool } from 'pg';
 import { computeLabel } from '../metadata/field-types';
 import { STANDARD_MODULES } from '../metadata/standard-modules';
+import { documentTotals, formatDocNumber, grandTotal, lineAmounts } from '../records/line-documents';
 import { provisionTenant } from './provisioning';
 
 export interface DemoOptions {
@@ -212,6 +213,90 @@ export async function seedDemo(pool: Pool, opts: DemoOptions = {}): Promise<bool
       start: at(3, 9),
       end: at(3, 10),
     });
+    // catalogo prodotti e una PDA con righe (dati di fantasia)
+    const prod = (data: Record<string, unknown>) => rec('Products', manager, { active: true, vat_rate: 22, ...data });
+    const pFv = await prod({
+      name: 'Modulo fotovoltaico 430 W',
+      product_code: 'FV-430',
+      product_type: 'Prodotto',
+      category: 'Fotovoltaico',
+      unit: 'pz',
+      unit_price: 165,
+    });
+    const pInv = await prod({
+      name: 'Inverter ibrido 6 kW',
+      product_code: 'INV-6H',
+      product_type: 'Prodotto',
+      category: 'Fotovoltaico',
+      unit: 'pz',
+      unit_price: 1450,
+    });
+    const pBat = await prod({
+      name: 'Batteria di accumulo 10 kWh',
+      product_code: 'ACC-10',
+      product_type: 'Prodotto',
+      category: 'Accumulo',
+      unit: 'pz',
+      unit_price: 4200,
+    });
+    await prod({
+      name: 'Pompa di calore 8 kW',
+      product_code: 'PDC-8',
+      product_type: 'Prodotto',
+      category: 'Pompa di calore',
+      unit: 'pz',
+      unit_price: 5900,
+    });
+    const pInst = await prod({
+      name: 'Installazione e collaudo',
+      product_code: 'SRV-INST',
+      product_type: 'Servizio',
+      category: 'Servizi',
+      unit: 'a corpo',
+      unit_price: 2200,
+      vat_rate: 10,
+    });
+
+    const year = new Date().getFullYear();
+    const pdaLines = [
+      { productId: pFv, description: 'Modulo fotovoltaico 430 W', quantity: 14, unitPrice: 165, discount: 5, vatRate: 10 },
+      { productId: pInv, description: 'Inverter ibrido 6 kW', quantity: 1, unitPrice: 1450, discount: 0, vatRate: 10 },
+      { productId: pBat, description: 'Batteria di accumulo 10 kWh', quantity: 1, unitPrice: 4200, discount: 0, vatRate: 10 },
+      { productId: pInst, description: 'Installazione e collaudo', quantity: 1, unitPrice: 2200, discount: 0, vatRate: 10 },
+    ].map((l) => ({ ...l, amounts: lineAmounts(l) }));
+    const totals = documentTotals(pdaLines.map((l) => l.amounts));
+    const adjustment = -Math.round((totals.total % 50) * 100) / 100; // arrotonda alla cinquantina inferiore
+    await client.query(
+      `INSERT INTO record_counters (tenant_id, module, year, last_value) VALUES ($1, 'SalesOrders', $2, 1)`,
+      [t.tenantId, year],
+    );
+    const pda = await rec('SalesOrders', rep2, {
+      subject: 'Impianto fotovoltaico 6 kW con accumulo',
+      order_number: formatDocNumber('', year, 1),
+      order_date: new Date().toISOString().slice(0, 10),
+      account_id: acc2,
+      contact_id: c3,
+      status: 'Firmata',
+      product_category: 'Fotovoltaico',
+      source: 'Sito web',
+      payment_type: 'Finanziamento',
+      financing_company: 'Finanziaria di esempio',
+      financed_amount: grandTotal(totals.net, totals.vat, adjustment),
+      down_payment: 0,
+      subtotal: totals.net,
+      vat_total: totals.vat,
+      adjustment,
+      grand_total: grandTotal(totals.net, totals.vat, adjustment),
+    });
+    for (const [i, l] of pdaLines.entries()) {
+      await client.query(
+        `INSERT INTO record_lines (tenant_id, record_id, position, product_id, description, quantity, unit_price,
+                                   discount, vat_rate, net_amount, vat_amount, total_amount)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        [t.tenantId, pda, i + 1, l.productId, l.description, l.quantity, l.unitPrice, l.discount, l.vatRate,
+         l.amounts.net, l.amounts.vat, l.amounts.total],
+      );
+    }
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');
