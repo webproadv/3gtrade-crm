@@ -14,6 +14,7 @@ import { EVENT_HANDLERS, LoggingHandler } from './events/event-handlers';
 import { OutboxWorker } from './events/outbox.worker';
 import { MetadataController } from './metadata/metadata.controller';
 import { MetadataService } from './metadata/metadata.service';
+import { CalendarController } from './records/calendar.controller';
 import { RecordsController } from './records/records.controller';
 import { RecordsService } from './records/records.service';
 import { ScopeService } from './security/scope.service';
@@ -34,6 +35,7 @@ export class AppModule {
         AuthController,
         MetadataController,
         RecordsController,
+        CalendarController,
         AdminController,
         UsersController,
       ],

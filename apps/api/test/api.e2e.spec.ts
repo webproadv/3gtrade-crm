@@ -13,7 +13,7 @@ import { loadConfig } from '../src/config';
 import { assertRlsEnforced, migrate } from '../src/db/migrator';
 import { EVENT_HANDLERS, EventHandler } from '../src/events/event-handlers';
 import { OutboxWorker } from '../src/events/outbox.worker';
-import { provisionTenant } from '../src/tenants/provisioning';
+import { ensureStandardModules, provisionTenant } from '../src/tenants/provisioning';
 
 const DB = process.env.TEST_DATABASE_URL ?? 'postgres://crm:crm@localhost:5432/crm_test';
 const PASSWORD = 'password123';
@@ -170,7 +170,7 @@ describe('record e permessi', () => {
 
     const rel = await as('rep1').get(`/records/Accounts/${accountId}/related`);
     const byModule = Object.fromEntries(rel.body.map((r: any) => [`${r.module}.${r.field}`, r.total]));
-    expect(byModule).toEqual({ 'Contacts.account_id': 1, 'Opportunities.account_id': 1 });
+    expect(byModule).toEqual({ 'Contacts.account_id': 1, 'Opportunities.account_id': 1, 'Activities.account_id': 0 });
 
     const upd = await as('rep1').patch(`/records/Opportunities/${opp.body.id}`, { data: { sales_stage: 'Chiusa vinta' } });
     expect(upd.body.data.sales_stage).toBe('Chiusa vinta');
@@ -238,6 +238,81 @@ describe('metadati personalizzabili', () => {
       modules: { Projects: { view: true, create: true, edit: true, delete: false } },
     });
     expect((await as('rep1').get('/records/Projects')).status).toBe(200);
+  });
+});
+
+describe('attività e calendario', () => {
+  let accountId: string;
+  let activityId: string;
+
+  beforeAll(async () => {
+    accountId = (await as('rep1').post('/records/Accounts', { data: { name: 'Delta Srl' } })).body.id;
+  });
+
+  it('crea un\'attività con i valori predefiniti', async () => {
+    const r = await as('rep1').post('/records/Activities', {
+      data: { subject: 'Chiamare il cliente', start: '2027-03-10T09:00:00+01:00', account_id: accountId },
+    });
+    expect(r.status).toBe(201);
+    expect(r.body.data).toMatchObject({
+      activity_type: 'Compito',
+      status: 'Pianificata',
+      priority: 'Media',
+      start: '2027-03-10T08:00:00.000Z',
+    });
+    activityId = r.body.id;
+    const rel = await as('rep1').get(`/records/Accounts/${accountId}/related`);
+    expect(rel.body.find((x: any) => x.module === 'Activities').total).toBe(1);
+  });
+
+  it('rifiuta una fine precedente all\'inizio, anche in modifica', async () => {
+    const bad = await as('rep1').post('/records/Activities', {
+      data: { subject: 'X', start: '2027-03-10T10:00:00Z', end: '2027-03-10T09:00:00Z' },
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.errors.end).toBeDefined();
+    const upd = await as('rep1').patch(`/records/Activities/${activityId}`, { data: { end: '2027-03-10T07:00:00Z' } });
+    expect(upd.status).toBe(400);
+  });
+
+  it('restituisce le attività dell\'intervallo nel calendario, rispettando la visibilità', async () => {
+    await as('rep1').post('/records/Activities', {
+      data: { subject: 'Riunione', activity_type: 'Appuntamento', start: '2027-03-12T14:00:00Z', end: '2027-03-12T15:00:00Z' },
+    });
+    await as('rep1').post('/records/Activities', { data: { subject: 'Fuori intervallo', start: '2027-04-20T09:00:00Z' } });
+
+    const cal = await as('rep1').get('/calendar?from=2027-03-01T00:00:00Z&to=2027-04-01T00:00:00Z');
+    expect(cal.status).toBe(200);
+    expect(cal.body.items.map((i: any) => i.label)).toEqual(['Chiamare il cliente', 'Riunione']);
+    expect((await as('rep2').get('/calendar?from=2027-03-01T00:00:00Z&to=2027-04-01T00:00:00Z')).body.total).toBe(0);
+    expect((await as('manager').get('/calendar?from=2027-03-01T00:00:00Z&to=2027-04-01T00:00:00Z')).body.total).toBe(2);
+    expect((await as('rep1').get('/calendar?from=2027-01-01T00:00:00Z&to=2027-06-01T00:00:00Z')).status).toBe(400);
+  });
+
+  it('filtra per intervallo nelle liste e valida i campi ammessi', async () => {
+    const r = await as('rep1').get('/records/Activities?after[start]=2027-03-11T00:00:00Z&sort=start&dir=asc');
+    expect(r.body.items.map((i: any) => i.label)).toEqual(['Riunione', 'Fuori intervallo']);
+    expect((await as('rep1').get('/records/Activities?after[subject]=a')).status).toBe(400);
+    const num = await as('rep1').get('/records/Accounts?after[employees]=100');
+    expect(num.body.items.every((i: any) => i.data.employees >= 100)).toBe(true);
+  });
+
+  it('aggiunge il modulo Attività ai tenant esistenti ereditando i permessi', async () => {
+    const tenant = (await pool.query(`SELECT id FROM tenants WHERE slug = 'other'`)).rows[0].id;
+    const client = await pool.connect();
+    await client.query('BEGIN');
+    await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant]);
+    await client.query(`DELETE FROM profile_module_permissions WHERE module = 'Activities'`);
+    await client.query(`DELETE FROM modules WHERE name = 'Activities'`);
+    await client.query(`DELETE FROM fields WHERE module = 'Accounts' AND name = 'pec'`);
+    await client.query('COMMIT');
+    client.release();
+    expect((await as('other').get('/records/Activities')).status).toBe(404);
+
+    const added = await ensureStandardModules(pool);
+    expect(added).toEqual(['other: campo Accounts.pec', 'other: modulo Activities']);
+    expect((await as('other').get('/records/Activities')).status).toBe(200);
+    expect(await ensureStandardModules(pool)).toEqual([]);
   });
 });
 

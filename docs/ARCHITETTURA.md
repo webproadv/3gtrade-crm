@@ -30,6 +30,14 @@ dimentica un filtro non può mostrare dati di un altro tenant.
 
 Non sono ancora presenti le regole di condivisione personalizzate e i gruppi.
 
+**Moduli standard versionati nel codice.** `STANDARD_MODULES` è la fonte di verità dei moduli e campi
+di base. `ensureStandardModules` (all'avvio e in `npm run migrate`) aggiunge ai tenant esistenti
+moduli e campi standard mancanti senza modificare quelli presenti; un modulo nuovo copia i permessi
+dei profili da un modulo indicato (`inheritPermissionsFrom`).
+
+**Regole tra campi.** Le validazioni che coinvolgono più campi dello stesso record (es. fine
+attività successiva all'inizio) sono in `records/module-rules.ts` e valgono su creazione e modifica.
+
 **Outbox transazionale.** Ogni scrittura su un record inserisce un evento in `outbox_events` nella
 stessa transazione. `OutboxWorker` li legge a lotti con `FOR UPDATE SKIP LOCKED` (più istanze
 possono lavorare in parallelo), imposta il tenant dell'evento e chiama i gestori registrati
@@ -39,7 +47,7 @@ possono lavorare in parallelo), imposta il tenant dell'evento e chiama i gestori
 
 1. Workflow: condizioni sui campi + azioni (aggiorna campo, crea record, invia email) come
    `EventHandler`, configurabili dall'amministrazione.
-2. Moduli Attività (chiamate, appuntamenti, compiti) e calendario.
+2. Promemoria delle attività (notifica prima dell'inizio) come gestore di eventi pianificato.
 3. Lead con conversione in Azienda, Contatto e Opportunità.
 4. Prodotti, preventivi e ordini con righe di dettaglio.
 5. Import ed export CSV, viste di lista salvate con filtri.

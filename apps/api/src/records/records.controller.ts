@@ -19,6 +19,8 @@ const ListQuerySchema = z.object({
   dir: z.enum(['asc', 'desc']).optional(),
   ownerId: z.string().optional(),
   filter: z.record(z.string(), z.string()).optional(),
+  after: z.record(z.string(), z.string()).optional(),
+  before: z.record(z.string(), z.string()).optional(),
 });
 
 @Controller('records/:module')

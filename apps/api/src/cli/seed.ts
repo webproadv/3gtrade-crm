@@ -117,7 +117,7 @@ async function main() {
     });
     await rec('Contacts', manager, { first_name: 'Andrea', last_name: 'Neri', account_id: acc3 });
 
-    await rec('Opportunities', rep1, {
+    const opp1 = await rec('Opportunities', rep1, {
       name: 'Fornitura linea di assemblaggio',
       account_id: acc1,
       contact_id: c1,
@@ -144,6 +144,70 @@ async function main() {
       sales_stage: 'Qualificazione',
       probability: 30,
       lead_source: 'Sito web',
+    });
+
+    // attività attorno alla data odierna, così calendario e panoramica mostrano qualcosa
+    const at = (days: number, hour: number, minute = 0) => {
+      const d = new Date();
+      d.setDate(d.getDate() + days);
+      d.setHours(hour, minute, 0, 0);
+      return d.toISOString();
+    };
+    const act = (owner: string, data: Record<string, unknown>) =>
+      rec('Activities', owner, { status: 'Pianificata', priority: 'Media', ...data });
+    await act(rep1, {
+      subject: 'Inviare offerta aggiornata',
+      activity_type: 'Compito',
+      priority: 'Alta',
+      start: at(-1, 17),
+      account_id: acc1,
+      opportunity_id: opp1,
+    });
+    await act(rep1, {
+      subject: 'Chiamata con Ing. Ferri',
+      activity_type: 'Chiamata',
+      start: at(0, 10),
+      end: at(0, 10, 30),
+      account_id: acc1,
+      contact_id: c1,
+    });
+    await act(rep1, {
+      subject: 'Visita in stabilimento',
+      activity_type: 'Appuntamento',
+      start: at(2, 9, 30),
+      end: at(2, 12),
+      location: 'Milano',
+      account_id: acc1,
+      opportunity_id: opp1,
+    });
+    await act(rep1, {
+      subject: 'Follow-up contratto manutenzione',
+      activity_type: 'Email',
+      start: at(4, 11),
+      account_id: acc1,
+    });
+    await act(rep1, {
+      subject: 'Riunione kick-off',
+      activity_type: 'Appuntamento',
+      status: 'Completata',
+      start: at(-6, 14),
+      end: at(-6, 15),
+      account_id: acc1,
+    });
+    await act(rep2, {
+      subject: 'Sopralluogo impianto',
+      activity_type: 'Appuntamento',
+      start: at(1, 15),
+      end: at(1, 17),
+      location: 'Ancona',
+      account_id: acc2,
+      contact_id: c3,
+    });
+    await act(manager, {
+      subject: 'Revisione pipeline con il team',
+      activity_type: 'Appuntamento',
+      start: at(3, 9),
+      end: at(3, 10),
     });
     await client.query('COMMIT');
   } catch (e) {

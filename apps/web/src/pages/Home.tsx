@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, qs } from '../api';
 import { formatCurrency, formatDate } from '../components/format';
+import { MyActivities } from '../components/MyActivities';
 import { useSession } from '../session';
 import type { ListResult } from '../types';
 
@@ -42,6 +43,7 @@ export function Home() {
           </Link>
         ))}
       </div>
+      <MyActivities />
       {opps && (
         <div className="grid-2">
           <section className="card">

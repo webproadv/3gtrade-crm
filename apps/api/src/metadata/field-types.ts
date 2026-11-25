@@ -31,6 +31,8 @@ export interface FieldOptions {
   module?: string;
   /** text: lunghezza massima */
   maxLength?: number;
+  /** valore proposto in creazione se il campo non viene indicato */
+  default?: unknown;
 }
 
 export interface FieldDef {

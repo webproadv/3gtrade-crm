@@ -25,7 +25,12 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   costruiscono dai metadati, quindi un campo o un modulo nuovo è subito utilizzabile.
 - **Campi personalizzati** di 16 tipi (testo, email, importo, data, elenco, collegamento a record, …)
   e **moduli personalizzati** creati dall'amministrazione.
-- **Moduli standard**: Aziende, Contatti, Opportunità, con relazioni e liste correlate.
+- **Moduli standard**: Aziende, Contatti, Opportunità e Attività, con relazioni e liste correlate.
+- **Attività e calendario**: chiamate, appuntamenti, compiti ed email collegati ad aziende, contatti e
+  opportunità; calendario mensile e settimanale filtrabile per utente; "Le mie attività" in panoramica
+  (in ritardo, oggi, prossimi giorni) con completamento in un clic.
+- **Aggiornamento dei tenant esistenti**: all'avvio e con `npm run migrate` i moduli e campi standard
+  nuovi vengono aggiunti ai tenant già creati, con i permessi ereditati da un modulo simile.
 - **Storico modifiche** di ogni record (chi, quando, valore prima e dopo).
 - **Eventi in background** con outbox transazionale: ogni creazione, modifica o eliminazione scrive un
   evento nella stessa transazione; un worker li processa (`FOR UPDATE SKIP LOCKED`) e li passa ai
@@ -104,9 +109,10 @@ Tutte sotto `/api`, autenticate con `Authorization: Bearer <token>`.
 | `POST /auth/login`                         | `{ tenant, email, password }` → token          |
 | `GET /auth/me`                             | utente corrente e permessi                     |
 | `GET /modules`                             | moduli visibili con campi e permessi           |
-| `GET /records/:module`                     | lista con `q`, `filter[campo]`, `sort`, `dir`, `page` |
+| `GET /records/:module`                     | lista con `q`, `filter[campo]`, `after[campo]`, `before[campo]`, `sort`, `dir`, `page` |
 | `POST /records/:module`                    | crea `{ data, ownerId? }`                      |
 | `GET/PATCH/DELETE /records/:module/:id`    | scheda, modifica parziale, eliminazione        |
 | `GET /records/:module/:id/related`         | liste correlate                                |
 | `GET /records/:module/:id/history`         | storico modifiche                              |
+| `GET /calendar?from=&to=&ownerId=`         | attività che iniziano nell'intervallo (max 45 giorni) |
 | `/admin/...`                               | utenti, ruoli, profili, moduli, campi (solo amministratori) |

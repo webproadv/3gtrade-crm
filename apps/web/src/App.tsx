@@ -3,6 +3,7 @@ import { Layout } from './components/Layout';
 import { AdminModules } from './pages/admin/AdminModules';
 import { AdminRoles } from './pages/admin/AdminRoles';
 import { AdminUsers } from './pages/admin/AdminUsers';
+import { Calendar } from './pages/Calendar';
 import { Home } from './pages/Home';
 import { ListView } from './pages/ListView';
 import { Login } from './pages/Login';
@@ -18,6 +19,7 @@ export function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={<Home />} />
+        <Route path="calendar" element={<Calendar />} />
         <Route path="m/:module" element={<ListView />} />
         <Route path="m/:module/new" element={<RecordForm />} />
         <Route path="m/:module/:id" element={<RecordView />} />

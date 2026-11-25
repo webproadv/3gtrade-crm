@@ -17,6 +17,11 @@ export interface StandardModule {
   icon: string;
   labelFields: string[];
   sharing: 'private' | 'public_read' | 'public_readwrite';
+  /**
+   * Quando il modulo viene aggiunto a un tenant già esistente, ogni profilo
+   * riceve gli stessi permessi che ha su questo modulo.
+   */
+  inheritPermissionsFrom?: string;
   fields: StandardField[];
 }
 
@@ -150,6 +155,57 @@ export const STANDARD_MODULES: StandardModule[] = [
         options: { values: ['Sito web', 'Passaparola', 'Fiera', 'Campagna email', 'Telefonata', 'Partner', 'Altro'] },
       },
       { name: 'next_step', label: 'Prossimo passo', type: 'text', block: 'Informazioni opportunità' },
+      { name: 'description', label: 'Descrizione', type: 'textarea', block: 'Descrizione' },
+    ],
+  },
+  {
+    name: 'Activities',
+    label: 'Attività',
+    labelSingular: 'Attività',
+    icon: 'calendar',
+    labelFields: ['subject'],
+    sharing: 'private',
+    inheritPermissionsFrom: 'Contacts',
+    fields: [
+      { name: 'subject', label: 'Oggetto', type: 'text', block: 'Attività', required: true, inList: true },
+      {
+        name: 'activity_type',
+        label: 'Tipo',
+        type: 'picklist',
+        block: 'Attività',
+        required: true,
+        inList: true,
+        options: { values: ['Chiamata', 'Appuntamento', 'Compito', 'Email'], default: 'Compito' },
+      },
+      {
+        name: 'status',
+        label: 'Stato',
+        type: 'picklist',
+        block: 'Attività',
+        required: true,
+        inList: true,
+        options: { values: ['Pianificata', 'Completata', 'Annullata'], default: 'Pianificata' },
+      },
+      {
+        name: 'priority',
+        label: 'Priorità',
+        type: 'picklist',
+        block: 'Attività',
+        options: { values: ['Alta', 'Media', 'Bassa'], default: 'Media' },
+      },
+      { name: 'start', label: 'Inizio / scadenza', type: 'datetime', block: 'Attività', required: true, inList: true },
+      { name: 'end', label: 'Fine', type: 'datetime', block: 'Attività' },
+      { name: 'all_day', label: 'Tutto il giorno', type: 'boolean', block: 'Attività' },
+      { name: 'location', label: 'Luogo', type: 'text', block: 'Attività' },
+      { name: 'account_id', label: 'Azienda', type: 'relation', block: 'Collegamenti', inList: true, options: { module: 'Accounts' } },
+      { name: 'contact_id', label: 'Contatto', type: 'relation', block: 'Collegamenti', options: { module: 'Contacts' } },
+      {
+        name: 'opportunity_id',
+        label: 'Opportunità',
+        type: 'relation',
+        block: 'Collegamenti',
+        options: { module: 'Opportunities' },
+      },
       { name: 'description', label: 'Descrizione', type: 'textarea', block: 'Descrizione' },
     ],
   },
