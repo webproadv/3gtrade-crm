@@ -75,4 +75,4 @@ script di avvio. Attenzione: questo cancella tutti i dati inseriti.
 
 **Posso usarlo da altri computer dell'ufficio?**
 Questa versione è pensata per un solo computer. Per usarlo da più postazioni o da fuori ufficio
-serve la pubblicazione online, che è il passo successivo.
+serve la pubblicazione online: vedi la [guida di pubblicazione](PUBBLICAZIONE-ONLINE.md).

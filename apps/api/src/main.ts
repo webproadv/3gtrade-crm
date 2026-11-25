@@ -10,7 +10,7 @@ import { AppModule } from './app.module';
 import { loadConfig } from './config';
 import { assertRlsEnforced, migrate } from './db/migrator';
 import { DEMO_USERS, seedDemo } from './tenants/demo';
-import { ensureStandardModules } from './tenants/provisioning';
+import { ensureStandardModules, provisionFromEnv } from './tenants/provisioning';
 
 async function prepareDatabase(databaseUrl: string) {
   const pool = new Pool({ connectionString: databaseUrl });
@@ -20,6 +20,9 @@ async function prepareDatabase(databaseUrl: string) {
       await migrate(pool, (m) => Logger.log(m, 'Migrations'));
       for (const a of await ensureStandardModules(pool)) Logger.log(`aggiunto ${a}`, 'Metadata');
     }
+    // INIT_*: al primo avvio online crea l'azienda reale con il suo amministratore
+    const created = await provisionFromEnv(pool, process.env);
+    if (created) Logger.log(`creata l'azienda "${created}" con il suo amministratore`, 'Init');
     // SEED_DEMO=true: al primo avvio crea l'azienda dimostrativa "demo"
     if (process.env.SEED_DEMO === 'true' && (await seedDemo(pool, { password: process.env.SEED_PASSWORD }))) {
       Logger.log(`creata l'azienda demo: ${DEMO_USERS.map(([e]) => e).join(', ')}`, 'Demo');
@@ -37,6 +40,8 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.enableCors({ origin: process.env.CORS_ORIGIN?.split(',') ?? true });
   app.enableShutdownHooks();
+  // dietro il proxy dell'hosting: IP reale del client (limite ai tentativi di accesso)
+  app.set('trust proxy', 1);
 
   // Se è presente la build dell'interfaccia, la serve dallo stesso processo:
   // un solo indirizzo e una sola porta per tutto il CRM.

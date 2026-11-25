@@ -1,0 +1,40 @@
+# Pubblicazione su Render (https://render.com) con server in Europa (Francoforte).
+# Da Render: New → Blueprint → scegli il repository. Vedi PUBBLICAZIONE-ONLINE.md.
+services:
+  - type: web
+    name: 3gtrade-crm
+    runtime: docker
+    region: frankfurt
+    plan: 0.5c-512mb        # piano a pagamento più piccolo: sempre acceso
+    branch: main
+    healthCheckPath: /api/health
+    autoDeploy: true        # ogni modifica unita su main viene pubblicata
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: 3gtrade-crm-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SEED_DEMO
+        value: "false"
+      # Azienda e amministratore creati al primo avvio (chiesti da Render alla creazione)
+      - key: INIT_TENANT_SLUG
+        sync: false
+      - key: INIT_TENANT_NAME
+        sync: false
+      - key: INIT_ADMIN_EMAIL
+        sync: false
+      - key: INIT_ADMIN_PASSWORD
+        sync: false
+
+databases:
+  - name: 3gtrade-crm-db
+    region: frankfurt
+    plan: 0.1c-256mb        # il più piccolo a pagamento (il database gratuito scade dopo 30 giorni)
+    postgresMajorVersion: "16"
+    databaseName: crm
+    user: crm
+    ipAllowList: []         # raggiungibile solo dai servizi Render

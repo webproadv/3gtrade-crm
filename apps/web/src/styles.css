@@ -259,3 +259,4 @@ label.inline { display: flex; align-items: center; gap: 8px; }
   .cal-week .cal-day { min-height: 0; }
   .cal-month .cal-time { display: none; }
 }
+.user-box a { color: var(--accent); }

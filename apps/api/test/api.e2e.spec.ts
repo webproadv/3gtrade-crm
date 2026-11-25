@@ -13,7 +13,7 @@ import { loadConfig } from '../src/config';
 import { assertRlsEnforced, migrate } from '../src/db/migrator';
 import { EVENT_HANDLERS, EventHandler } from '../src/events/event-handlers';
 import { OutboxWorker } from '../src/events/outbox.worker';
-import { ensureStandardModules, provisionTenant } from '../src/tenants/provisioning';
+import { ensureStandardModules, provisionFromEnv, provisionTenant } from '../src/tenants/provisioning';
 
 const DB = process.env.TEST_DATABASE_URL ?? 'postgres://crm:crm@localhost:5432/crm_test';
 const PASSWORD = 'password123';
@@ -106,6 +106,44 @@ describe('autenticazione', () => {
     const me = await as('rep1').get('/auth/me');
     expect(me.body).toMatchObject({ email: 'rep1@acme.test', isAdmin: false, role: 'Commerciale' });
     expect(me.body.permissions.Accounts).toEqual({ view: true, create: true, edit: true, delete: false });
+  });
+
+  it('blocca gli accessi dopo troppi tentativi falliti', async () => {
+    const attempt = (password: string) =>
+      request(app.getHttpServer()).post('/api/auth/login').send({ tenant: 'acme', email: 'nessuno@acme.test', password });
+    for (let i = 0; i < 10; i++) expect((await attempt('sbagliata')).status).toBe(401);
+    expect((await attempt('sbagliata')).status).toBe(429);
+    // gli altri utenti non sono bloccati
+    expect(await login('acme', 'admin@acme.test')).toBeTruthy();
+  });
+
+  it('permette di cambiare la propria password', async () => {
+    const wrong = await as('other').post('/auth/password', { currentPassword: 'errata', newPassword: 'nuovapass123' });
+    expect(wrong.status).toBe(400);
+    expect(wrong.body.errors.currentPassword).toBeDefined();
+    const short = await as('other').post('/auth/password', { currentPassword: PASSWORD, newPassword: 'corta' });
+    expect(short.status).toBe(400);
+    const ok = await as('other').post('/auth/password', { currentPassword: PASSWORD, newPassword: 'nuovapass123' });
+    expect(ok.status).toBe(201);
+    expect(await login('other', 'admin@other.test', 'nuovapass123')).toBeTruthy();
+    const old = await request(app.getHttpServer())
+      .post('/api/auth/login')
+      .send({ tenant: 'other', email: 'admin@other.test', password: PASSWORD });
+    expect(old.status).toBe(401);
+  });
+
+  it('crea l\'azienda iniziale dalle variabili INIT_* una sola volta', async () => {
+    const env = {
+      INIT_TENANT_SLUG: 'Nuova',
+      INIT_TENANT_NAME: 'Nuova Srl',
+      INIT_ADMIN_EMAIL: 'capo@nuova.test',
+      INIT_ADMIN_PASSWORD: 'unapassword-lunga',
+    };
+    await expect(provisionFromEnv(pool, { ...env, INIT_ADMIN_PASSWORD: 'corta' })).rejects.toThrow('INIT_ADMIN_PASSWORD');
+    expect(await provisionFromEnv(pool, env)).toBe('nuova');
+    expect(await provisionFromEnv(pool, env)).toBeNull();
+    expect(await provisionFromEnv(pool, {})).toBeNull();
+    expect(await login('nuova', 'capo@nuova.test', 'unapassword-lunga')).toBeTruthy();
   });
 });
 
