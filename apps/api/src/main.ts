@@ -4,6 +4,7 @@ import { NestFactory } from '@nestjs/core';
 import { Pool } from 'pg';
 import { AppModule } from './app.module';
 import { loadConfig } from './config';
+import { ensureStandardModules } from './tenants/provisioning';
 import { assertRlsEnforced, migrate } from './db/migrator';
 
 async function bootstrap() {
@@ -12,6 +13,7 @@ async function bootstrap() {
   await assertRlsEnforced(pool, process.env.NODE_ENV === 'production', (m) => Logger.warn(m, 'Database'));
   if (process.env.MIGRATE_ON_START !== 'false') {
     await migrate(pool, (m) => Logger.log(m, 'Migrations'));
+    for (const a of await ensureStandardModules(pool)) Logger.log(`aggiunto ${a}`, 'Metadata');
   }
   await pool.end();
   const app = await NestFactory.create(AppModule.forRoot(config));

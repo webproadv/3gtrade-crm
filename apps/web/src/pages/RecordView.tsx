@@ -65,6 +65,20 @@ export function RecordView() {
       <div className="page-head">
         <h1>{rec.label || '(senza nome)'}</h1>
         <div className="actions">
+          {name === 'Activities' && rec.permissions?.edit && rec.data.status === 'Pianificata' && (
+            <button
+              onClick={async () => {
+                try {
+                  setRec(await api<CrmRecord>(`/records/${name}/${id}`, { method: 'PATCH', body: { data: { status: 'Completata' } } }));
+                  setHistory(await api<HistoryItem[]>(`/records/${name}/${id}/history`));
+                } catch (e) {
+                  setError((e as Error).message);
+                }
+              }}
+            >
+              Segna come completata
+            </button>
+          )}
           {rec.permissions?.edit && (
             <button className="primary" onClick={() => nav(`/m/${name}/${id}/edit`)}>
               Modifica

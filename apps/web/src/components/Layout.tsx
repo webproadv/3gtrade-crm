@@ -11,6 +11,7 @@ export function Layout() {
           <NavLink to="/" end>
             Panoramica
           </NavLink>
+          {modules.some((m) => m.name === 'Activities') && <NavLink to="/calendar">Calendario</NavLink>}
           {modules.map((m) => (
             <NavLink key={m.name} to={`/m/${m.name}`}>
               {m.label}

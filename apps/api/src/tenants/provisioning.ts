@@ -25,6 +25,14 @@ async function inTenant<T>(pool: Pool, tenantId: string, fn: (tx: Tx) => Promise
   }
 }
 
+async function insertField(tx: Tx, tenantId: string, module: string, f: StandardModule['fields'][number], sortOrder: number) {
+  await tx.query(
+    `INSERT INTO fields (tenant_id, module, name, label, type, block, required, in_list, sort_order, options)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+    [tenantId, module, f.name, f.label, f.type, f.block, !!f.required, !!f.inList, sortOrder, JSON.stringify(f.options ?? {})],
+  );
+}
+
 export async function insertModule(tx: Tx, tenantId: string, m: StandardModule, sortOrder: number, isCustom = false) {
   await tx.query(
     `INSERT INTO modules (tenant_id, name, label, label_singular, icon, is_custom, sort_order, label_fields, sharing)
@@ -32,13 +40,50 @@ export async function insertModule(tx: Tx, tenantId: string, m: StandardModule, 
     [tenantId, m.name, m.label, m.labelSingular, m.icon, isCustom, sortOrder, m.labelFields, m.sharing],
   );
   let i = 0;
-  for (const f of m.fields) {
-    await tx.query(
-      `INSERT INTO fields (tenant_id, module, name, label, type, block, required, in_list, sort_order, options)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [tenantId, m.name, f.name, f.label, f.type, f.block, !!f.required, !!f.inList, (i += 10), JSON.stringify(f.options ?? {})],
-    );
+  for (const f of m.fields) await insertField(tx, tenantId, m.name, f, (i += 10));
+}
+
+/**
+ * Allinea i tenant esistenti ai moduli standard del codice: aggiunge i moduli
+ * e i campi standard mancanti senza toccare quelli già presenti o personalizzati.
+ * Un modulo nuovo eredita i permessi dei profili da `inheritPermissionsFrom`.
+ * Restituisce l'elenco delle aggiunte, per il log.
+ */
+export async function ensureStandardModules(pool: Pool): Promise<string[]> {
+  const added: string[] = [];
+  const tenants = (await pool.query<{ id: string; slug: string }>(`SELECT id, slug FROM tenants`)).rows;
+  for (const t of tenants) {
+    await inTenant(pool, t.id, async (tx) => {
+      const existing = new Set((await tx.query(`SELECT name FROM modules`)).rows.map((r) => r.name));
+      for (const m of STANDARD_MODULES) {
+        if (!existing.has(m.name)) {
+          const max = (await tx.query(`SELECT coalesce(max(sort_order), 0) AS m FROM modules WHERE NOT is_custom`)).rows[0].m;
+          await insertModule(tx, t.id, m, max + 10);
+          if (m.inheritPermissionsFrom) {
+            await tx.query(
+              `INSERT INTO profile_module_permissions (tenant_id, profile_id, module, can_view, can_create, can_edit, can_delete)
+               SELECT tenant_id, profile_id, $1, can_view, can_create, can_edit, can_delete
+                 FROM profile_module_permissions WHERE module = $2`,
+              [m.name, m.inheritPermissionsFrom],
+            );
+          }
+          added.push(`${t.slug}: modulo ${m.name}`);
+          continue;
+        }
+        const fields = new Set(
+          (await tx.query(`SELECT name FROM fields WHERE module = $1`, [m.name])).rows.map((r) => r.name),
+        );
+        const max = (await tx.query(`SELECT coalesce(max(sort_order), 0) AS m FROM fields WHERE module = $1`, [m.name])).rows[0].m;
+        let order = max;
+        for (const f of m.fields) {
+          if (fields.has(f.name)) continue;
+          await insertField(tx, t.id, m.name, f, (order += 10));
+          added.push(`${t.slug}: campo ${m.name}.${f.name}`);
+        }
+      }
+    });
   }
+  return added;
 }
 
 /**
@@ -83,7 +128,7 @@ export async function provisionTenant(pool: Pool, t: NewTenant) {
       await tx.query(
         `INSERT INTO profile_module_permissions (tenant_id, profile_id, module, can_view, can_create, can_edit, can_delete)
          VALUES ($1, $2, $3, true, true, true, true), ($1, $4, $3, true, true, true, $5)`,
-        [tenantId, adminProfile, m.name, salesProfile, m.name === 'Opportunities'],
+        [tenantId, adminProfile, m.name, salesProfile, m.name === 'Opportunities' || m.name === 'Activities'],
       );
     }
 

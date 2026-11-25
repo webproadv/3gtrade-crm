@@ -1,4 +1,5 @@
 import type { Field, Refs } from '../types';
+import { toLocalInput } from './format';
 import { RecordPicker } from './RecordPicker';
 
 export function FieldInput({
@@ -43,7 +44,7 @@ export function FieldInput({
         <input
           {...common}
           type="datetime-local"
-          value={str ? str.slice(0, 16) : ''}
+          value={str ? toLocalInput(str) : ''}
           onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
         />
       );

@@ -171,3 +171,91 @@ label.inline { display: flex; align-items: center; gap: 8px; }
   .admin-split { grid-template-columns: 1fr; }
   .bar-row { grid-template-columns: 100px 1fr 110px; }
 }
+
+/* ---------- Calendario e attività ---------- */
+:root {
+  --act-call: #1a7f37;
+  --act-meeting: #1f6feb;
+  --act-task: #9a6700;
+  --act-email: #8250df;
+}
+.spacer { flex: 1; }
+.cal-toolbar { flex-wrap: wrap; }
+.cal-title { font-size: 16px; text-transform: capitalize; margin-left: 4px; }
+.segmented { display: inline-flex; }
+.segmented button { border-radius: 0; }
+.segmented button:first-child { border-radius: 6px 0 0 6px; }
+.segmented button:last-child { border-radius: 0 6px 6px 0; margin-left: -1px; }
+.segmented button.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); position: relative; }
+
+.cal {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  background: var(--border);
+  gap: 1px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.cal-head { background: var(--surface); padding: 6px 8px; font-size: 12px; color: var(--muted); font-weight: 600; }
+.cal-day {
+  background: var(--surface);
+  min-height: 110px;
+  padding: 4px 6px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  cursor: pointer;
+  min-width: 0;
+}
+.cal-week .cal-day { min-height: 380px; }
+.cal-day:hover { background: var(--accent-soft); }
+.cal-day.outside { background: var(--bg); }
+.cal-day.outside .cal-date { opacity: 0.5; }
+.cal-date { font-size: 12px; font-weight: 600; margin-bottom: 2px; }
+.cal-day.today .cal-date {
+  color: #fff;
+  background: var(--accent);
+  border-radius: 10px;
+  padding: 0 7px;
+  align-self: flex-start;
+}
+.cal-item {
+  --c: var(--act-task);
+  display: block;
+  font-size: 12px;
+  line-height: 1.35;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border-left: 3px solid var(--c);
+  background: color-mix(in srgb, var(--c) 12%, transparent);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cal-item:hover { text-decoration: none; background: color-mix(in srgb, var(--c) 22%, transparent); }
+.cal-item[data-type='Chiamata'] { --c: var(--act-call); }
+.cal-item[data-type='Appuntamento'] { --c: var(--act-meeting); }
+.cal-item[data-type='Compito'] { --c: var(--act-task); }
+.cal-item[data-type='Email'] { --c: var(--act-email); }
+.cal-item.done { opacity: 0.55; text-decoration: line-through; }
+.cal-item.cancelled { opacity: 0.4; }
+.cal-time { font-weight: 600; margin-right: 4px; }
+.cal-week .cal-item { white-space: normal; }
+.cal-legend { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.cal-item.legend { display: inline-block; }
+
+.act-group h3 { margin: 10px 0 4px; font-size: 13px; }
+.act-group h3.overdue { color: var(--danger); }
+.act-list { list-style: none; margin: 0; padding: 0; }
+.act-list li { display: flex; gap: 8px; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.act-list li:last-child { border-bottom: none; }
+
+@media (max-width: 800px) {
+  .cal-day { min-height: 70px; padding: 2px; }
+  .cal-week { grid-template-columns: 1fr; }
+  .cal-week .cal-head { display: none; }
+  .cal-week .cal-day { min-height: 0; }
+  .cal-month .cal-time { display: none; }
+}

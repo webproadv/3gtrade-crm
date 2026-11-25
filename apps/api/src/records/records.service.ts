@@ -1,7 +1,15 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Tx } from '../db/database.service';
 import { enqueueEvent } from '../events/outbox';
-import { FieldDef, FieldValidationError, computeLabel, isUuid, validateRecordData } from '../metadata/field-types';
+import {
+  FieldDef,
+  FieldValidationError,
+  computeLabel,
+  isUuid,
+  normalizeValue,
+  validateRecordData,
+} from '../metadata/field-types';
+import { checkModuleRules } from './module-rules';
 import { MetadataService, ModuleDef } from '../metadata/metadata.service';
 import { SecurityContext, can, canAccessRecord } from '../security/security-context';
 
@@ -12,6 +20,12 @@ export interface ListQuery {
   sort?: string;
   dir?: 'asc' | 'desc';
   filter?: Record<string, string>;
+  /** campo >= valore (date, date/ora, numeri) */
+  after?: Record<string, string>;
+  /** campo <= valore (date, date/ora, numeri) */
+  before?: Record<string, string>;
+  /** uso interno: limite massimo di righe per pagina */
+  maxPageSize?: number;
   ownerId?: string;
 }
 
@@ -32,6 +46,8 @@ const CORE_SORT: Record<string, string> = {
   updatedAt: 'r.updated_at',
 };
 const NUMERIC = new Set(['integer', 'number', 'currency', 'percent']);
+// date e date/ora sono salvate in ISO 8601 (UTC), quindi confrontabili come testo
+const RANGE_TYPES = new Set([...NUMERIC, 'date', 'datetime']);
 
 @Injectable()
 export class RecordsService {
@@ -118,6 +134,20 @@ export class RecordsService {
       params.push(name, String(value));
       where.push(`r.data->>$${params.length - 1} = $${params.length}`);
     }
+    for (const [op, values] of [['>=', query.after], ['<=', query.before]] as const) {
+      for (const [name, raw] of Object.entries(values ?? {})) {
+        const f = byName.get(name);
+        if (!f || !RANGE_TYPES.has(f.type)) throw new BadRequestException(`Intervallo non ammesso sul campo ${name}`);
+        const [value, err] = normalizeValue(f, raw);
+        if (err || value === null) throw new BadRequestException(`Valore non valido per ${name}: ${err ?? 'vuoto'}`);
+        params.push(name, value);
+        where.push(
+          NUMERIC.has(f.type)
+            ? `(r.data->>$${params.length - 1})::numeric ${op} $${params.length}::numeric`
+            : `r.data->>$${params.length - 1} ${op} $${params.length}`,
+        );
+      }
+    }
 
     const whereSql = where.join(' AND ');
     const total = Number(
@@ -136,7 +166,7 @@ export class RecordsService {
       }
     }
     const dir = query.dir === 'asc' ? 'ASC' : 'DESC';
-    const pageSize = Math.min(Math.max(Number(query.pageSize) || 25, 1), 200);
+    const pageSize = Math.min(Math.max(Number(query.pageSize) || 25, 1), query.maxPageSize ?? 200);
     const page = Math.max(Number(query.page) || 1, 1);
     const rows = (
       await tx.query<Row>(
@@ -201,6 +231,11 @@ export class RecordsService {
     if (Object.keys(errors).length) throw new FieldValidationError(errors);
   }
 
+  private checkRules(module: string, data: Record<string, unknown>) {
+    const errors = checkModuleRules(module, data);
+    if (Object.keys(errors).length) throw new FieldValidationError(errors);
+  }
+
   private async checkOwner(tx: Tx, ownerId: unknown): Promise<string> {
     if (!isUuid(ownerId)) throw new FieldValidationError({ ownerId: 'assegnatario non valido' });
     const r = await tx.query(`SELECT 1 FROM users WHERE id = $1 AND active`, [ownerId]);
@@ -214,9 +249,24 @@ export class RecordsService {
 
   async create(tx: Tx, sec: SecurityContext, module: string, body: { data?: Record<string, unknown>; ownerId?: string }) {
     const { mod, fields } = await this.context(tx, sec, module, 'create');
+    const editable = this.editableSet(fields);
+    // i valori predefiniti dei campi modificabili valgono come se l'utente li avesse indicati
+    const input: Record<string, unknown> = { ...body.data };
+    for (const f of fields) {
+      if (editable.has(f.name) && input[f.name] === undefined && f.options.default !== undefined) {
+        input[f.name] = f.options.default;
+      }
+    }
     // valida solo i campi visibili: un obbligatorio nascosto all'utente non blocca la creazione
-    const data = validateRecordData(fields, body.data ?? {}, { isCreate: true, editable: this.editableSet(fields) });
+    const data = validateRecordData(fields, input, { isCreate: true, editable });
     for (const k of Object.keys(data)) if (data[k] === null) delete data[k];
+    // gli altri campi (nascosti o in sola lettura) ricevono comunque il loro predefinito
+    for (const f of await this.meta.listFields(tx, module)) {
+      if (data[f.name] !== undefined || f.options.default === undefined) continue;
+      const [v, err] = normalizeValue(f, f.options.default);
+      if (!err && v !== null) data[f.name] = v;
+    }
+    this.checkRules(module, data);
     await this.checkReferences(tx, fields, data);
     const ownerId = body.ownerId ? await this.checkOwner(tx, body.ownerId) : sec.userId;
     const label = computeLabel(mod.labelFields, data);
@@ -255,6 +305,7 @@ export class RecordsService {
       if (v === null) delete next[k];
       else next[k] = v;
     }
+    this.checkRules(module, next);
     let ownerId = row.owner_id;
     if (body.ownerId && body.ownerId !== row.owner_id) {
       ownerId = await this.checkOwner(tx, body.ownerId);
