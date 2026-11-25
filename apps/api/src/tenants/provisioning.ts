@@ -2,6 +2,7 @@ import { Pool } from 'pg';
 import * as bcrypt from 'bcryptjs';
 import { STANDARD_MODULES, StandardModule } from '../metadata/standard-modules';
 import { Tx } from '../db/database.service';
+import { DEFAULT_REPORTS } from '../reports/default-reports';
 
 export interface NewTenant {
   slug: string;
@@ -49,11 +50,37 @@ export async function insertModule(tx: Tx, tenantId: string, m: StandardModule, 
  * Un modulo nuovo eredita i permessi dei profili da `inheritPermissionsFrom`.
  * Restituisce l'elenco delle aggiunte, per il log.
  */
+/** Rapporti di esempio condivisi, di proprietà dell'amministratore indicato. */
+async function insertDefaultReports(tx: Tx, tenantId: string, ownerId: string) {
+  for (const r of DEFAULT_REPORTS) {
+    await tx.query(
+      `INSERT INTO reports (tenant_id, name, description, module, config, shared, owner_id)
+       VALUES ($1, $2, $3, $4, $5, true, $6)`,
+      [tenantId, r.name, r.description, r.module, JSON.stringify(r.config), ownerId],
+    );
+  }
+  await tx.query(`UPDATE tenants SET default_reports_at = now() WHERE id = $1`, [tenantId]);
+}
+
 export async function ensureStandardModules(pool: Pool): Promise<string[]> {
   const added: string[] = [];
-  const tenants = (await pool.query<{ id: string; slug: string }>(`SELECT id, slug FROM tenants`)).rows;
+  const tenants = (
+    await pool.query<{ id: string; slug: string; default_reports_at: Date | null }>(
+      `SELECT id, slug, default_reports_at FROM tenants`,
+    )
+  ).rows;
   for (const t of tenants) {
     await inTenant(pool, t.id, async (tx) => {
+      // aziende create prima dei rapporti: ricevono una sola volta i rapporti di esempio
+      if (!t.default_reports_at) {
+        const admin = (
+          await tx.query(`SELECT id FROM users WHERE is_admin AND active ORDER BY created_at LIMIT 1`)
+        ).rows[0];
+        if (admin) {
+          await insertDefaultReports(tx, t.id, admin.id);
+          added.push(`${t.slug}: rapporti di esempio`);
+        }
+      }
       const existing = new Set((await tx.query(`SELECT name FROM modules`)).rows.map((r) => r.name));
       for (const m of STANDARD_MODULES) {
         if (!existing.has(m.name)) {
@@ -151,6 +178,8 @@ export async function provisionTenant(pool: Pool, t: NewTenant) {
         [tenantId, t.admin.email, await bcrypt.hash(t.admin.password, 10), t.admin.firstName, t.admin.lastName, ceo.id],
       )
     ).rows[0].id;
+
+    await insertDefaultReports(tx, tenantId, adminId);
 
     return {
       tenantId,

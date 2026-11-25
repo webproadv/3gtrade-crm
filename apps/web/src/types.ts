@@ -72,3 +72,59 @@ export interface Me {
   role: string;
   tenantName: string;
 }
+
+export type FilterOp = 'eq' | 'neq' | 'contains' | 'empty' | 'notEmpty' | 'gt' | 'gte' | 'lt' | 'lte' | 'period';
+export type Aggregate = 'sum' | 'avg' | 'min' | 'max';
+
+export interface ReportConfig {
+  columns: string[];
+  filters: { field: string; op: FilterOp; value?: string | number | boolean }[];
+  groupBy?: { field: string; dateGroup?: 'day' | 'month' | 'year' } | null;
+  groupOrder: 'key' | 'count';
+  totals: { field: string; fn: Aggregate }[];
+  sort?: { field: string; dir: 'asc' | 'desc' } | null;
+  chart: 'none' | 'bar' | 'pie';
+}
+
+export interface Report {
+  id: string;
+  name: string;
+  description: string;
+  module: string;
+  shared: boolean;
+  ownerId: string;
+  config: ReportConfig;
+  updatedAt: string;
+  canEdit: boolean;
+}
+
+export interface ReportSummary {
+  id: string;
+  name: string;
+  description: string;
+  module: string;
+  moduleLabel: string;
+  shared: boolean;
+  ownerName: string;
+  updatedAt: string;
+  canEdit: boolean;
+}
+
+export interface ReportColumn {
+  key: string;
+  label: string;
+  type: FieldType;
+}
+
+export interface ReportResult {
+  columns: ReportColumn[];
+  rows: { id: string; values: Record<string, unknown> }[];
+  rowCount: number;
+  truncated: boolean;
+  totalDefs: { key: string; label: string; type: FieldType }[];
+  totals: Record<string, number | null>;
+  groupBy: { key: string; label: string; type: FieldType; dateGroup?: string } | null;
+  groups: { key: string | null; label: string; count: number; totals: Record<string, number | null> }[] | null;
+  hidden: string[];
+  refs: Refs;
+}

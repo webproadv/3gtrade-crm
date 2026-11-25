@@ -10,6 +10,9 @@ import { ListView } from './pages/ListView';
 import { Login } from './pages/Login';
 import { RecordForm } from './pages/RecordForm';
 import { RecordView } from './pages/RecordView';
+import { ReportEditor } from './pages/reports/ReportEditor';
+import { ReportsList } from './pages/reports/ReportsList';
+import { ReportView } from './pages/reports/ReportView';
 import { useSession } from './session';
 
 export function App() {
@@ -22,6 +25,10 @@ export function App() {
         <Route index element={<Home />} />
         <Route path="calendar" element={<Calendar />} />
         <Route path="password" element={<ChangePassword />} />
+        <Route path="reports" element={<ReportsList />} />
+        <Route path="reports/new" element={<ReportEditor />} />
+        <Route path="reports/:id" element={<ReportView />} />
+        <Route path="reports/:id/edit" element={<ReportEditor />} />
         <Route path="m/:module" element={<ListView />} />
         <Route path="m/:module/new" element={<RecordForm />} />
         <Route path="m/:module/:id" element={<RecordView />} />

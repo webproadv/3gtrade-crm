@@ -29,7 +29,7 @@ export interface ListQuery {
   ownerId?: string;
 }
 
-interface Row {
+export interface Row {
   id: string;
   module: string;
   label: string;
@@ -61,7 +61,7 @@ export class RecordsService {
   }
 
   /** Condizione SQL di visibilità dei record per l'utente. */
-  private visibility(sec: SecurityContext, mod: ModuleDef, params: unknown[], alias = 'r'): string {
+  visibility(sec: SecurityContext, mod: ModuleDef, params: unknown[], alias = 'r'): string {
     if (sec.isAdmin || mod.sharing !== 'private') return 'TRUE';
     params.push(sec.visibleOwnerIds);
     return `${alias}.owner_id = ANY($${params.length}::uuid[])`;
@@ -83,7 +83,7 @@ export class RecordsService {
   }
 
   /** Risolve le etichette dei record e degli utenti referenziati. */
-  private async refs(tx: Tx, rows: Row[], fields: FieldDef[]) {
+  async refs(tx: Tx, rows: Row[], fields: FieldDef[]) {
     const recordIds = new Set<string>();
     const userIds = new Set<string>();
     for (const row of rows) {
