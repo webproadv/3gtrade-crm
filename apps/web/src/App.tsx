@@ -4,6 +4,7 @@ import { AdminModules } from './pages/admin/AdminModules';
 import { AdminRoles } from './pages/admin/AdminRoles';
 import { AdminUsers } from './pages/admin/AdminUsers';
 import { Calendar } from './pages/Calendar';
+import { ChangePassword } from './pages/ChangePassword';
 import { Home } from './pages/Home';
 import { ListView } from './pages/ListView';
 import { Login } from './pages/Login';
@@ -20,6 +21,7 @@ export function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="calendar" element={<Calendar />} />
+        <Route path="password" element={<ChangePassword />} />
         <Route path="m/:module" element={<ListView />} />
         <Route path="m/:module/new" element={<RecordForm />} />
         <Route path="m/:module/:id" element={<RecordView />} />

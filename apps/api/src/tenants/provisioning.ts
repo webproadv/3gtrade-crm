@@ -160,3 +160,32 @@ export async function provisionTenant(pool: Pool, t: NewTenant) {
     };
   });
 }
+
+/**
+ * Crea l'azienda iniziale dalle variabili d'ambiente se non esiste ancora:
+ * INIT_TENANT_SLUG, INIT_TENANT_NAME, INIT_ADMIN_EMAIL, INIT_ADMIN_PASSWORD
+ * (facoltativi INIT_ADMIN_FIRST_NAME, INIT_ADMIN_LAST_NAME).
+ * Restituisce lo slug creato, oppure null se non c'era nulla da fare.
+ */
+export async function provisionFromEnv(pool: Pool, env: NodeJS.ProcessEnv): Promise<string | null> {
+  const slug = env.INIT_TENANT_SLUG?.trim().toLowerCase();
+  if (!slug) return null;
+  const email = env.INIT_ADMIN_EMAIL?.trim();
+  const password = env.INIT_ADMIN_PASSWORD ?? '';
+  if (!/^[a-z0-9][a-z0-9-]{1,39}$/.test(slug)) throw new Error('INIT_TENANT_SLUG: solo lettere minuscole, numeri e trattini');
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error('INIT_ADMIN_EMAIL mancante o non valida');
+  if (password.length < 10) throw new Error('INIT_ADMIN_PASSWORD deve avere almeno 10 caratteri');
+  const exists = await pool.query(`SELECT 1 FROM tenants WHERE slug = $1`, [slug]);
+  if (exists.rowCount) return null;
+  await provisionTenant(pool, {
+    slug,
+    name: env.INIT_TENANT_NAME?.trim() || slug,
+    admin: {
+      email,
+      password,
+      firstName: env.INIT_ADMIN_FIRST_NAME ?? 'Amministratore',
+      lastName: env.INIT_ADMIN_LAST_NAME ?? '',
+    },
+  });
+  return slug;
+}

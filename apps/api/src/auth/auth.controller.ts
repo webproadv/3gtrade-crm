@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Ip, Post } from '@nestjs/common';
 import { z } from 'zod';
 import { parseBody } from '../common/validation';
 import { ScopeService } from '../security/scope.service';
@@ -12,6 +12,11 @@ const LoginSchema = z.object({
   password: z.string().min(1),
 });
 
+const PasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, 'minimo 8 caratteri'),
+});
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -21,9 +26,15 @@ export class AuthController {
 
   @Public()
   @Post('login')
-  login(@Body() body: unknown) {
+  login(@Body() body: unknown, @Ip() ip: string) {
     const { tenant, email, password } = parseBody(LoginSchema, body);
-    return this.auth.login(tenant, email, password);
+    return this.auth.login(tenant, email, password, ip);
+  }
+
+  @Post('password')
+  changePassword(@Auth() auth: AuthInfo, @Body() body: unknown) {
+    const { currentPassword, newPassword } = parseBody(PasswordSchema, body);
+    return this.auth.changePassword(auth, currentPassword, newPassword);
   }
 
   /** Profilo dell'utente corrente con i permessi per modulo. */

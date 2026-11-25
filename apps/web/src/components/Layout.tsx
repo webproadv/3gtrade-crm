@@ -35,7 +35,11 @@ export function Layout() {
           <div className="muted small">
             {me?.role} · {me?.tenantName}
           </div>
-          <button className="link" onClick={logout}>
+          <NavLink to="/password" className="small">
+            Cambia password
+          </NavLink>{' '}
+          ·{' '}
+          <button className="link small" onClick={logout}>
             Esci
           </button>
         </div>

@@ -50,6 +50,15 @@ docker compose stop              # ferma, i dati restano nel volume db-data
 Variabili utili: `CRM_PORT` (porta sul computer, predefinita 8080), `JWT_SECRET`, `SEED_DEMO`
 (`true` crea l'azienda demo al primo avvio).
 
+## Pubblicarlo online
+
+Il file [`render.yaml`](render.yaml) descrive servizio e database su Render (Francoforte). I passaggi,
+senza conoscenze tecniche, sono nella [guida di pubblicazione](PUBBLICAZIONE-ONLINE.md). In produzione
+`SEED_DEMO` è spento e al primo avvio le variabili `INIT_TENANT_SLUG`, `INIT_TENANT_NAME`,
+`INIT_ADMIN_EMAIL` e `INIT_ADMIN_PASSWORD` creano l'azienda reale con il suo amministratore.
+L'accesso si blocca per 15 minuti dopo 10 tentativi falliti e ogni utente può cambiare la propria
+password (`POST /auth/password`).
+
 ## Sviluppo
 
 Requisiti: Node.js 22 e Docker (oppure un PostgreSQL 16 già installato).
@@ -122,6 +131,7 @@ Tutte sotto `/api`, autenticate con `Authorization: Bearer <token>`.
 | ------------------------------------------ | --------------------------------------------- |
 | `POST /auth/login`                         | `{ tenant, email, password }` → token          |
 | `GET /auth/me`                             | utente corrente e permessi                     |
+| `POST /auth/password`                      | `{ currentPassword, newPassword }`             |
 | `GET /modules`                             | moduli visibili con campi e permessi           |
 | `GET /records/:module`                     | lista con `q`, `filter[campo]`, `after[campo]`, `before[campo]`, `sort`, `dir`, `page` |
 | `POST /records/:module`                    | crea `{ data, ownerId? }`                      |
