@@ -1,14 +1,39 @@
+# Avvio completo del CRM in locale: database + applicazione.
+#   docker compose up -d --build   ->  http://localhost:8080
+# Gli script avvia-crm-* nella cartella principale fanno la stessa cosa con un doppio clic.
+
+name: 3gtrade-crm
+
 services:
   db:
-    image: postgres:16
+    image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d crm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://crm:crm@db:5432/crm
+      # Chiave per i token di accesso: in locale va bene questa, online va cambiata.
+      JWT_SECRET: ${JWT_SECRET:-chiave-locale-3gtrade-da-cambiare-online}
+      # Crea l'azienda dimostrativa "demo" al primo avvio
+      SEED_DEMO: ${SEED_DEMO:-true}
+    ports:
+      - "${CRM_PORT:-8080}:8080"
 
 volumes:
   db-data:
