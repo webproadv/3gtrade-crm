@@ -5,9 +5,7 @@ services:
     name: 3gtrade-crm
     runtime: docker
     region: frankfurt
-    # gratuito: si spegne dopo 15 minuti senza visite e si riaccende in circa un minuto.
-    # Per averlo sempre acceso (7 $/mese) sostituisci free con 0.5c-512mb.
-    plan: free
+    plan: 0.5c-512mb        # il più piccolo a pagamento, 7 $/mese: sempre acceso
     branch: main
     healthCheckPath: /api/health
     autoDeploy: true        # ogni modifica unita su main viene pubblicata
