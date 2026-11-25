@@ -31,6 +31,11 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   (in ritardo, oggi, prossimi giorni) con completamento in un clic.
 - **Aggiornamento dei tenant esistenti**: all'avvio e con `npm run migrate` i moduli e campi standard
   nuovi vengono aggiunti ai tenant già creati, con i permessi ereditati da un modulo simile.
+- **Rapporti** come in vtenext: su qualunque modulo, con colonne a scelta, filtri (anche su periodi come
+  "questo mese" o "l'anno scorso"), raggruppamento per campo o per giorno/mese/anno, somme, medie, minimi e
+  massimi, grafico a barre o a torta ed esportazione per Excel (CSV) del dettaglio o del riepilogo.
+  Un rapporto può essere privato o condiviso: chi lo apre vede solo i record e i campi consentiti dal suo
+  profilo. Ogni azienda nuova parte con cinque rapporti di esempio.
 - **Storico modifiche** di ogni record (chi, quando, valore prima e dopo).
 - **Eventi in background** con outbox transazionale: ogni creazione, modifica o eliminazione scrive un
   evento nella stessa transazione; un worker li processa (`FOR UPDATE SKIP LOCKED`) e li passa ai
@@ -138,5 +143,8 @@ Tutte sotto `/api`, autenticate con `Authorization: Bearer <token>`.
 | `GET/PATCH/DELETE /records/:module/:id`    | scheda, modifica parziale, eliminazione        |
 | `GET /records/:module/:id/related`         | liste correlate                                |
 | `GET /records/:module/:id/history`         | storico modifiche                              |
+| `GET/POST /reports`, `GET/PATCH/DELETE /reports/:id` | rapporti salvati                  |
+| `GET /reports/:id/run`, `POST /reports/run` | esegue un rapporto salvato o un'anteprima      |
+| `GET /reports/:id/export?part=rows\|summary` | CSV per Excel (dettaglio o riepilogo)       |
 | `GET /calendar?from=&to=&ownerId=`         | attività che iniziano nell'intervallo (max 45 giorni) |
 | `/admin/...`                               | utenti, ruoli, profili, moduli, campi (solo amministratori) |

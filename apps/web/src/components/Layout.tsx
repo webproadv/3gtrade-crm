@@ -12,6 +12,7 @@ export function Layout() {
             Panoramica
           </NavLink>
           {modules.some((m) => m.name === 'Activities') && <NavLink to="/calendar">Calendario</NavLink>}
+          <NavLink to="/reports">Rapporti</NavLink>
           {modules.map((m) => (
             <NavLink key={m.name} to={`/m/${m.name}`}>
               {m.label}

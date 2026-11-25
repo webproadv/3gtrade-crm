@@ -43,6 +43,11 @@ stessa transazione. `OutboxWorker` li legge a lotti con `FOR UPDATE SKIP LOCKED`
 possono lavorare in parallelo), imposta il tenant dell'evento e chiama i gestori registrati
 (`EventHandler`). Un errore in un gestore viene registrato e l'evento viene ritentato fino a 5 volte.
 
+**Rapporti.** Una definizione (colonne, filtri, raggruppamento, totali, grafico) salvata in `reports.config`
+viene tradotta in SQL su `records` con le stesse regole di visibilità delle liste. I campi che l'utente non
+vede sono rifiutati al salvataggio e ignorati quando apre un rapporto condiviso da altri. I nomi dei campi
+entrano nell'SQL come letterali presi dai metadati; i valori dei filtri sono parametri.
+
 ## Prossimi passi suggeriti
 
 1. Workflow: condizioni sui campi + azioni (aggiorna campo, crea record, invia email) come
@@ -50,6 +55,6 @@ possono lavorare in parallelo), imposta il tenant dell'evento e chiama i gestori
 2. Promemoria delle attività (notifica prima dell'inizio) come gestore di eventi pianificato.
 3. Lead con conversione in Azienda, Contatto e Opportunità.
 4. Prodotti, preventivi e ordini con righe di dettaglio.
-5. Import ed export CSV, viste di lista salvate con filtri.
+5. Import CSV, viste di lista salvate con filtri, dashboard con i grafici dei rapporti.
 6. Motore BPM: modellazione con bpmn-js e un sottoinsieme di BPMN eseguito sugli stessi eventi.
 7. Gruppi, regole di condivisione e assegnazione a gruppi.

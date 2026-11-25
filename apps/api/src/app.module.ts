@@ -17,6 +17,8 @@ import { MetadataService } from './metadata/metadata.service';
 import { CalendarController } from './records/calendar.controller';
 import { RecordsController } from './records/records.controller';
 import { RecordsService } from './records/records.service';
+import { ReportsController } from './reports/reports.controller';
+import { ReportsService } from './reports/reports.service';
 import { ScopeService } from './security/scope.service';
 import { SecurityService } from './security/security.service';
 
@@ -36,6 +38,7 @@ export class AppModule {
         MetadataController,
         RecordsController,
         CalendarController,
+        ReportsController,
         AdminController,
         UsersController,
       ],
@@ -45,6 +48,7 @@ export class AppModule {
         ScopeService,
         MetadataService,
         RecordsService,
+        ReportsService,
         AdminService,
         LoggingHandler,
         { provide: EVENT_HANDLERS, useFactory: (log: LoggingHandler) => [log], inject: [LoggingHandler] },

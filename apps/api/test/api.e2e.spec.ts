@@ -371,3 +371,176 @@ describe('eventi in background', () => {
     expect(counts.rows[0].pending).toBe(0);
   });
 });
+
+describe('rapporti', () => {
+  let rpt: Awaited<ReturnType<typeof provisionTenant>>;
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    rpt = await provisionTenant(pool, {
+      slug: 'rpt',
+      name: 'Rapporti',
+      admin: { email: 'admin@rpt.test', password: PASSWORD, firstName: 'Ada', lastName: 'Rpt' },
+    });
+    tokens.rptAdmin = await login('rpt', 'admin@rpt.test');
+    for (const u of ['rep1', 'rep2']) {
+      const r = await as('rptAdmin').post('/admin/users', {
+        email: `${u}@rpt.test`,
+        password: PASSWORD,
+        firstName: u,
+        lastName: 'Rpt',
+        roleId: rpt.roles.salesRep,
+      });
+      ids[u] = r.body.id;
+      tokens[`rpt_${u}`] = await login('rpt', `${u}@rpt.test`);
+    }
+    const opp = async (who: string, name: string, amount: number, stage: string, close: string) => {
+      const acc = await as(who).post('/records/Accounts', { data: { name: `Az ${name}` } });
+      const r = await as(who).post('/records/Opportunities', {
+        data: { name, account_id: acc.body.id, amount, sales_stage: stage, close_date: close },
+      });
+      expect(r.status).toBe(201);
+    };
+    await opp('rpt_rep1', 'Uno', 1000, 'Proposta', '2026-01-15');
+    await opp('rpt_rep1', 'Due', 2500.5, 'Chiusa vinta', '2026-01-20');
+    await opp('rpt_rep2', 'Tre', 4000, 'Proposta', '2026-02-03');
+    await opp('rpt_rep2', 'Quattro', 500, 'Chiusa persa', '2026-03-10');
+  });
+
+  const config = {
+    columns: ['name', 'amount', 'sales_stage', 'ownerId'],
+    filters: [],
+    groupBy: { field: 'sales_stage' },
+    totals: [{ field: 'amount', fn: 'sum' }],
+    sort: { field: 'amount', dir: 'desc' },
+    chart: 'bar',
+  };
+
+  it('raggruppa e totalizza rispettando la visibilità dei record', async () => {
+    const all = await as('rptAdmin').post('/reports/run', { module: 'Opportunities', config });
+    expect(all.status).toBe(201);
+    expect(all.body.totals).toEqual({ count: 4, 'sum:amount': 8000.5 });
+    expect(all.body.groups.map((g: any) => [g.label, g.count, g.totals['sum:amount']])).toEqual([
+      ['Chiusa persa', 1, 500],
+      ['Chiusa vinta', 1, 2500.5],
+      ['Proposta', 2, 5000],
+    ]);
+    // ordinati per fase e poi per importo decrescente
+    expect(all.body.rows.map((r: any) => r.values.name)).toEqual(['Quattro', 'Due', 'Tre', 'Uno']);
+    expect(all.body.refs.users[ids.rep1]).toBe('rep1 Rpt');
+
+    const mine = await as('rpt_rep1').post('/reports/run', { module: 'Opportunities', config });
+    expect(mine.body.totals).toEqual({ count: 2, 'sum:amount': 3500.5 });
+  });
+
+  it('filtra per valore, intervallo e utente, e raggruppa per mese', async () => {
+    const run = (filters: object[], extra: object = {}) =>
+      as('rptAdmin').post('/reports/run', { module: 'Opportunities', config: { ...config, groupBy: null, filters, ...extra } });
+    expect((await run([{ field: 'sales_stage', op: 'eq', value: 'Proposta' }])).body.totals.count).toBe(2);
+    expect((await run([{ field: 'sales_stage', op: 'neq', value: 'Proposta' }])).body.totals.count).toBe(2);
+    expect((await run([{ field: 'amount', op: 'gte', value: 2500.5 }])).body.totals.count).toBe(2);
+    expect((await run([{ field: 'name', op: 'contains', value: 'TR' }])).body.rows[0].values.name).toBe('Tre');
+    expect((await run([{ field: 'close_date', op: 'lte', value: '2026-01-31' }])).body.totals.count).toBe(2);
+    expect((await run([{ field: 'ownerId', op: 'eq', value: ids.rep2 }])).body.totals['sum:amount']).toBe(4500);
+    expect((await run([{ field: 'createdAt', op: 'period', value: 'today' }])).body.totals.count).toBe(4);
+    expect((await run([{ field: 'description', op: 'empty' }])).body.totals.count).toBe(4);
+
+    const byMonth = await run([], { groupBy: { field: 'close_date', dateGroup: 'month' }, groupOrder: 'key' });
+    expect(byMonth.body.groups.map((g: any) => [g.label, g.count])).toEqual([
+      ['Gennaio 2026', 2],
+      ['Febbraio 2026', 1],
+      ['Marzo 2026', 1],
+    ]);
+    const byOwner = await run([], { groupBy: { field: 'ownerId' }, groupOrder: 'count' });
+    expect(byOwner.body.groups.map((g: any) => g.label).sort()).toEqual(['rep1 Rpt', 'rep2 Rpt']);
+
+    const bad = await run([{ field: 'name', op: 'gt', value: 'x' }, { field: 'boh', op: 'eq', value: 1 }]);
+    expect(bad.status).toBe(400);
+    expect(Object.keys(bad.body.errors)).toEqual(['filters.0', 'filters.1']);
+  });
+
+  it('salva, condivide ed esporta in CSV', async () => {
+    const created = await as('rpt_rep1').post('/reports', {
+      name: 'Opportunità per fase',
+      module: 'Opportunities',
+      config,
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.id;
+    // privato: rep2 non lo vede finché non è condiviso
+    const mineOnly = (body: any[]) => body.filter((r) => r.id === id);
+    expect(mineOnly((await as('rpt_rep2').get('/reports')).body)).toEqual([]);
+    expect((await as('rpt_rep2').get(`/reports/${id}`)).status).toBe(404);
+    await as('rpt_rep1').patch(`/reports/${id}`, { name: 'Opportunità per fase', module: 'Opportunities', shared: true, config });
+    const list = await as('rpt_rep2').get('/reports');
+    expect(mineOnly(list.body).map((r: any) => [r.name, r.canEdit])).toEqual([['Opportunità per fase', false]]);
+
+    // stesso rapporto, dati diversi: rep2 vede solo i suoi record
+    const run = await as('rpt_rep2').get(`/reports/${id}/run`);
+    expect(run.body.result.totals.count).toBe(2);
+    expect((await as('rpt_rep2').del(`/reports/${id}`)).status).toBe(403);
+
+    const csv = await as('rpt_rep1').get(`/reports/${id}/export`);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.headers['content-disposition']).toContain('opportunita-per-fase.csv');
+    const lines = csv.text.replace('﻿', '').trim().split('\r\n');
+    expect(lines[0]).toBe('Nome opportunità;Importo;Fase di vendita;Assegnato a');
+    expect(lines).toContain('Due;2500,5;Chiusa vinta;rep1 Rpt');
+    const summary = await as('rpt_rep1').get(`/reports/${id}/export?part=summary`);
+    expect(summary.text.trim().split('\r\n').slice(-1)[0]).toBe('Totale;2;3500,5');
+
+    expect((await as('rpt_rep1').del(`/reports/${id}`)).status).toBe(200);
+    expect((await as('rptAdmin').get(`/reports/${id}`)).status).toBe(404);
+  });
+
+  it('ignora i campi nascosti all\'utente e li rifiuta al salvataggio', async () => {
+    const mod = await as('rptAdmin').get('/admin/modules');
+    const amount = mod.body.find((m: any) => m.name === 'Opportunities').fields.find((f: any) => f.name === 'amount');
+    await as('rptAdmin').put(`/admin/profiles/${rpt.profiles.sales}/permissions`, {
+      fields: { [amount.id]: { visible: false, editable: false } },
+    });
+    // il rapporto salvato dall'amministratore si apre comunque, senza i campi nascosti
+    const saved = await as('rptAdmin').post('/reports', { name: 'Con importi', module: 'Opportunities', shared: true, config });
+    const run = await as('rpt_rep1').get(`/reports/${saved.body.id}/run`).then((r) => ({ status: r.status, body: r.body.result }));
+    expect(run.status).toBe(200);
+    expect(run.body.hidden).toEqual(['Importo']);
+    expect(run.body.columns.map((c: any) => c.key)).toEqual(['name', 'sales_stage', 'ownerId']);
+    expect(run.body.totals).toEqual({ count: 2 });
+    expect(run.body.rows[0].values.amount).toBeUndefined();
+
+    const save = await as('rpt_rep1').post('/reports', { name: 'X', module: 'Opportunities', config });
+    expect(save.status).toBe(400);
+    expect(save.body.errors['columns.1']).toContain('Importo');
+    const preview = await as('rpt_rep1').post('/reports/run', { module: 'Opportunities', config });
+    expect(preview.status).toBe(400);
+  });
+
+  it('non mostra rapporti né dati di altre aziende o di moduli non consentiti', async () => {
+    const r = await as('rptAdmin').post('/reports', { name: 'Interno', module: 'Opportunities', config });
+    expect((await as('admin').get(`/reports/${r.body.id}`)).status).toBe(404);
+    expect((await as('admin').get('/reports')).body.find((x: any) => x.id === r.body.id)).toBeUndefined();
+  });
+
+  it('crea i rapporti di esempio con ogni nuova azienda, eseguibili', async () => {
+    const list = await as('rpt_rep2').get('/reports');
+    const defaults = list.body.filter((r: any) => r.shared && r.ownerName === 'Ada Rpt');
+    expect(defaults.map((r: any) => r.name)).toEqual(
+      expect.arrayContaining(['Opportunità per fase di vendita', 'Previsione chiusure per mese', 'Attività del mese per tipo']),
+    );
+    for (const r of defaults) {
+      const run = await as('rpt_rep2').get(`/reports/${r.id}/run`);
+      expect(run.status).toBe(200);
+    }
+    const forecast = defaults.find((r: any) => r.name === 'Previsione chiusure per mese');
+    const res = (await as('rpt_rep2').get(`/reports/${forecast.id}/run`)).body.result;
+    expect(res.totals.count).toBe(1); // "Tre" (Proposta); "Quattro" è chiusa persa
+  });
+
+  it('aggiunge una sola volta i rapporti di esempio alle aziende già esistenti', async () => {
+    await pool.query(`UPDATE tenants SET default_reports_at = NULL WHERE slug = 'other'`);
+    expect(await ensureStandardModules(pool)).toEqual(['other: rapporti di esempio']);
+    expect(await ensureStandardModules(pool)).toEqual([]);
+    const list = await as('other').get('/reports');
+    expect(list.body.filter((r: any) => r.name === 'Opportunità per fase di vendita')).toHaveLength(2);
+  });
+});

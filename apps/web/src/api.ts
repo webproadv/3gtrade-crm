@@ -60,3 +60,19 @@ export function qs(params: Record<string, string | number | undefined | Record<s
   const s = sp.toString();
   return s ? `?${s}` : '';
 }
+
+/** Scarica un file dall'API (con il token) e lo salva con il nome indicato dal server. */
+export async function download(path: string) {
+  const token = getToken();
+  const res = await fetch(`/api${path}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? 'export.csv';
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
