@@ -5,7 +5,9 @@ services:
     name: 3gtrade-crm
     runtime: docker
     region: frankfurt
-    plan: 0.5c-512mb        # piano a pagamento più piccolo: sempre acceso
+    # gratuito: si spegne dopo 15 minuti senza visite e si riaccende in circa un minuto.
+    # Per averlo sempre acceso (7 $/mese) sostituisci free con 0.5c-512mb.
+    plan: free
     branch: main
     healthCheckPath: /api/health
     autoDeploy: true        # ogni modifica unita su main viene pubblicata
@@ -33,7 +35,10 @@ services:
 databases:
   - name: 3gtrade-crm-db
     region: frankfurt
-    plan: 0.1c-256mb        # il più piccolo a pagamento (il database gratuito scade dopo 30 giorni)
+    # il più piccolo a pagamento, 6 $/mese + 0,30 $/mese per GB di spazio.
+    # Il database gratuito non è adatto: viene cancellato dopo 30 giorni e non ha backup.
+    plan: 0.1c-256mb
+    diskSizeGB: 1
     postgresMajorVersion: "16"
     databaseName: crm
     user: crm

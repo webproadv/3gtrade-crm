@@ -8,8 +8,11 @@ Francoforte. Non servono conoscenze tecniche: si fa tutto dal sito di Render.
 
 - Le modifiche del CRM devono essere unite nel ramo **main** del repository GitHub
   `webproadv/3gtrade-crm` (le pull request aperte vanno unite in ordine).
-- Tieni a portata di mano una carta di pagamento: il servizio sempre acceso e il database
-  sono a pagamento. Render mostra il costo mensile prima della conferma.
+- Tieni a portata di mano una carta di pagamento. Costo previsto: **circa 6,30 $ al mese**
+  (database 6 $ + 1 GB di spazio 0,30 $). Il CRM usa il piano gratuito: dopo 15 minuti senza
+  visite si mette in pausa e la prima apertura successiva richiede circa un minuto. Per averlo
+  sempre pronto si passa al piano da 7 $ al mese (vedi "Sempre acceso" in fondo).
+- Il database gratuito di Render non va usato: viene cancellato dopo 30 giorni e non ha backup.
 
 ## 1. Crea l'account Render
 
@@ -67,3 +70,8 @@ minuti. I dati restano nel database.
 Per usare un indirizzo come `crm.3gtrade.it`: nel servizio apri **Settings → Custom Domains**,
 aggiungi il dominio e copia il record DNS indicato nel pannello del tuo provider del dominio.
 Il certificato HTTPS è automatico.
+
+## Sempre acceso (facoltativo, 7 $ al mese in più)
+
+Nel servizio **3gtrade-crm** apri **Settings → Instance Type**, scegli il piano a pagamento più
+piccolo (512 MB) e conferma. Il CRM non va più in pausa e si apre subito.
