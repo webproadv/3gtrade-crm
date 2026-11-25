@@ -31,3 +31,19 @@ jobs:
       - run: npm --prefix apps/api run typecheck
       - run: npm --prefix apps/api test
       - run: npm --prefix apps/web run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Avvia il CRM completo con docker compose
+        run: docker compose up -d --build --wait
+      - name: Verifica che API e interfaccia rispondano
+        run: |
+          curl -fs http://localhost:8080/api/health
+          curl -fs http://localhost:8080/ | grep -q "3Gtrade CRM"
+          curl -fs -X POST http://localhost:8080/api/auth/login -H 'content-type: application/json' \
+            -d '{"tenant":"demo","email":"admin@3gtrade.local","password":"demo1234"}' | grep -q accessToken
+      - name: Log in caso di errore
+        if: failure()
+        run: docker compose logs

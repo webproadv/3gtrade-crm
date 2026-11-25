@@ -36,7 +36,21 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   evento nella stessa transazione; un worker li processa (`FOR UPDATE SKIP LOCKED`) e li passa ai
   gestori registrati. È l'aggancio per workflow, notifiche e BPM.
 
-## Avvio in locale
+## Usarlo sul proprio computer
+
+Per chi vuole solo usare il CRM: segui la [guida di avvio](GUIDA-AVVIO.md). Serve soltanto Docker
+Desktop; un doppio clic su `avvia-crm-windows.bat` o `avvia-crm-mac.command` avvia database e
+applicazione e apre **http://localhost:8080**. Lo stesso si ottiene con:
+
+```bash
+docker compose up -d --build     # CRM completo su http://localhost:8080
+docker compose stop              # ferma, i dati restano nel volume db-data
+```
+
+Variabili utili: `CRM_PORT` (porta sul computer, predefinita 8080), `JWT_SECRET`, `SEED_DEMO`
+(`true` crea l'azienda demo al primo avvio).
+
+## Sviluppo
 
 Requisiti: Node.js 22 e Docker (oppure un PostgreSQL 16 già installato).
 

@@ -4,8 +4,10 @@
   "version": "0.1.0",
   "description": "CRM multi-tenant metadata-driven ispirato a vtenext (TypeScript, NestJS, React, PostgreSQL)",
   "scripts": {
+    "start": "docker compose up -d --build",
+    "stop": "docker compose stop",
     "install:all": "npm --prefix apps/api ci && npm --prefix apps/web ci",
-    "db:up": "docker compose up -d db",
+    "db:up": "docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d db",
     "migrate": "npm --prefix apps/api run migrate",
     "seed": "npm --prefix apps/api run seed",
     "dev:api": "npm --prefix apps/api run dev",
