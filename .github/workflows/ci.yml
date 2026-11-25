@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://crm:crm@localhost:5432/crm_test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Crea utente applicativo (non superuser) e database di test
+        run: psql postgres://postgres:postgres@localhost:5432/postgres -f scripts/init-db.sql
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm --prefix apps/api ci
+      - run: npm --prefix apps/web ci
+      - run: npm --prefix apps/api run typecheck
+      - run: npm --prefix apps/api test
+      - run: npm --prefix apps/web run build
