@@ -701,7 +701,10 @@ describe('PDA e prodotti', () => {
     });
     expect(ok.status).toBe(200);
     const cancel = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { status: 'Annullata' } });
-    expect(cancel.body.errors.cancel_date).toBeDefined();
+    // la data di annullamento viene proposta dal sistema, ma non si può togliere
+    expect(cancel.body.data.cancel_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const cleared = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { cancel_date: null } });
+    expect(cleared.body.errors.cancel_date).toBeDefined();
     const st = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { status: 'In approvazione finanziaria' } });
     expect(st.body.data.status).toBe('In approvazione finanziaria');
   });
@@ -926,5 +929,57 @@ describe('commenti sui record', () => {
     expect((await as('rep1').del(`${url}/${c1.body.id}`)).status).toBe(200);
     expect((await as('admin').del(`${url}/${c2.body.id}`)).status).toBe(200);
     expect((await as('rep1').get(url)).body).toHaveLength(0);
+  });
+});
+
+describe('automatismi al salvataggio', () => {
+  it('imposta la probabilità e la data di annullamento', async () => {
+    const acc = (await as('admin').post('/records/Accounts', { data: { name: 'Cliente automatismi' } })).body.id;
+    const opp = await as('admin').post('/records/Opportunities', {
+      data: { name: 'Auto', account_id: acc, close_date: '2027-01-31', sales_stage: 'Proposta', probability: 40 },
+    });
+    const won = await as('admin').patch(`/records/Opportunities/${opp.body.id}`, {
+      data: { sales_stage: 'Chiusa vinta' },
+    });
+    expect(won.body.data.probability).toBe(100);
+    const lost = await as('admin').patch(`/records/Opportunities/${opp.body.id}`, {
+      data: { sales_stage: 'Chiusa persa' },
+    });
+    expect(lost.body.data.probability).toBe(0);
+
+    const pda = (await as('admin').post('/records/SalesOrders', { data: { subject: 'Da annullare', account_id: acc } }))
+      .body.id;
+    const cancelled = await as('admin').patch(`/records/SalesOrders/${pda}`, { data: { status: 'Annullata' } });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.data.cancel_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('sostituisce la PDA precedente e aggiorna le statistiche del cliente', async () => {
+    const acc = (await as('admin').post('/records/Accounts', { data: { name: 'Cliente statistiche' } })).body.id;
+    const stats = async () => (await as('admin').get(`/records/Accounts/${acc}`)).body.data;
+
+    const first = (
+      await as('admin').post('/records/SalesOrders', { data: { subject: 'Prima', account_id: acc, status: 'Firmata' } })
+    ).body.id;
+    await as('admin').put(`/records/SalesOrders/${first}/lines`, {
+      lines: [{ description: 'Impianto', quantity: 1, unitPrice: 1000, vatRate: 0 }],
+    });
+    await as('admin').post('/records/Opportunities', {
+      data: { name: 'Aperta', account_id: acc, close_date: '2027-01-31', sales_stage: 'Proposta' },
+    });
+    expect(await stats()).toMatchObject({ pda_active_count: 1, pda_active_total: 1000, open_opportunities_count: 1 });
+    expect((await stats()).last_pda_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    const second = await as('admin').post('/records/SalesOrders', {
+      data: { subject: 'Seconda', account_id: acc, status: 'Firmata', replaces_pda_id: first },
+    });
+    expect(second.status).toBe(201);
+    expect((await as('admin').get(`/records/SalesOrders/${first}`)).body.data.status).toBe('Sostituita');
+    expect(await stats()).toMatchObject({ pda_active_count: 1, pda_active_total: 0 });
+
+    // i campi statistici non sono modificabili a mano
+    expect((await as('admin').patch(`/records/Accounts/${acc}`, { data: { pda_active_count: 9 } })).status).toBe(400);
+    await as('admin').del(`/records/SalesOrders/${second.body.id}`);
+    expect((await stats()).pda_active_count).toBe(0);
   });
 });

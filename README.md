@@ -25,13 +25,27 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   costruiscono dai metadati, quindi un campo o un modulo nuovo è subito utilizzabile.
 - **Campi personalizzati** di 16 tipi (testo, email, importo, data, elenco, collegamento a record, …)
   e **moduli personalizzati** creati dall'amministrazione.
-- **Moduli standard**: Aziende, Contatti, Opportunità, Attività, Prodotti e servizi e PDA, con relazioni e
+- **Moduli standard**: Lead, Clienti, Contatti, Opportunità, Attività, Prodotti e servizi e PDA, con relazioni e
   liste correlate.
+- **Cliente unico B2B/B2C**: un solo modulo Clienti per aziende e privati (tipo cliente), con codice SDI, ATECO,
+  condominio, cliente principale (gerarchia), blocchi per persona fisica, legale rappresentante, indirizzo di
+  spedizione e mandato SEPA. Il blocco **Statistiche** (PDA attive e loro valore, ultima PDA, opportunità aperte)
+  è aggiornato dal sistema.
 - **Lead e conversione** come in vtenext: numero automatico (`LEA-2026-00001`), primo contatto, qualificazione
   (bollette, consumi, budget, tipo di installazione), esito dell'appuntamento e dati dell'azienda. Il pulsante
   **Converti** crea l'azienda (per i privati prende il nome della persona) oppure collega un'azienda esistente,
   crea il contatto e, se richiesto, l'opportunità "Cliente - Prodotto". Il lead resta come storico con lo stato
   "Convertito" e i collegamenti ai record creati; le sue attività passano al nuovo cliente.
+- **Viste salvate delle liste** come in vtenext: oltre a "Tutti", viste personali o pubbliche con colonne,
+  filtri e ordinamento; filtro "Assegnato a" (a me, agli altri, a un collega) e ricerca. Una vista pubblica
+  può essere modificata solo da chi l'ha creata o dall'amministratore.
+- **Vista a colonne** per opportunità (fase di vendita), lead (stato) e PDA (stato), con totale per colonna:
+  trascinando una scheda si aggiorna il campo, con gli stessi permessi e controlli della modifica.
+- **Commenti** dei colleghi su ogni scheda (come le "Conversazioni" di vtenext): li legge e scrive chi vede il
+  record, ognuno elimina i propri.
+- **Automatismi al salvataggio**: opportunità chiusa vinta = probabilità 100%, chiusa persa = 0%; PDA annullata
+  senza data = data di annullamento di oggi; una PDA che ne sostituisce un'altra porta quella vecchia allo stato
+  "Sostituita"; le statistiche del cliente si ricalcolano a ogni PDA o opportunità salvata.
 - **Attività e calendario**: chiamate, appuntamenti, compiti ed email collegati ad aziende, contatti e
   opportunità; calendario mensile e settimanale filtrabile per utente; "Le mie attività" in panoramica
   (in ritardo, oggi, prossimi giorni) con completamento in un clic.
@@ -42,9 +56,11 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   massimi, grafico a barre o a torta ed esportazione per Excel (CSV) del dettaglio o del riepilogo.
   Un rapporto può essere privato o condiviso: chi lo apre vede solo i record e i campi consentiti dal suo
   profilo. Ogni azienda nuova parte con cinque rapporti di esempio.
-- **PDA (proposta di acquisto)** con i campi principali del modello vtenext: numero progressivo automatico
-  per anno (es. `2026-00001`), cliente, stato, categoria, pagamento e finanziamento, sopralluogo e
-  installazione. Le righe prendono prodotti dal catalogo (prezzo e IVA di listino modificabili) con quantità
+- **PDA (proposta di acquisto)** con i campi del modello vtenext: numero progressivo automatico
+  per anno (es. `2026-00001`), cliente, stato (dalla bozza all'incasso degli acconti, con sospesa, non approvata
+  e sostituita), tipo, divisione, partner e segnalatore, documentazione, pagamento e finanziamento (percentuali
+  di acconto e saldo controllate, esito della finanziaria, IBAN), sopralluogo e installazione, luce e gas,
+  comunicazioni al cliente e amministrazione (recupero crediti). Le righe prendono prodotti dal catalogo (prezzo e IVA di listino modificabili) con quantità
   e sconto; imponibile, IVA e totale sono calcolati dal server, con un arrotondamento modificabile a mano.
   Versione stampabile con spazio per la firma del cliente. Il catalogo **Prodotti e servizi** è in sola
   lettura per i profili diversi dall'amministratore.
@@ -156,6 +172,10 @@ Tutte sotto `/api`, autenticate con `Authorization: Bearer <token>`.
 | `GET /records/:module/:id/related`         | liste correlate                                |
 | `GET /records/:module/:id/history`         | storico modifiche                              |
 | `GET/PUT /records/:module/:id/lines`       | righe della PDA (la PUT le sostituisce tutte e ricalcola i totali) |
+| `GET/POST/DELETE /records/:module/:id/comments` | commenti sulla scheda (`DELETE .../comments/:commentId`) |
+| `POST /leads/:id/convert`                  | converte il lead in cliente, contatto e opportunità |
+| `GET /list-views?module=`, `POST /list-views`, `GET/PATCH/DELETE /list-views/:id` | viste salvate delle liste |
+| `POST /list-views/query`                   | esegue una vista (`viewId` o `config`) con `q`, `owner`, `sort`, `page` |
 | `GET/POST /reports`, `GET/PATCH/DELETE /reports/:id` | rapporti salvati                  |
 | `GET /reports/:id/run`, `POST /reports/run` | esegue un rapporto salvato o un'anteprima      |
 | `GET /reports/:id/export?part=rows\|summary` | CSV per Excel (dettaglio o riepilogo)       |

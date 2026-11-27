@@ -316,6 +316,11 @@ export const STANDARD_MODULES: StandardModule[] = [
       },
       { name: 'sepa_signature_date', label: 'Data firma mandato', type: 'date', block: 'Mandato SEPA (SDD)' },
       { name: 'sepa_revocation_date', label: 'Data revoca', type: 'date', block: 'Mandato SEPA (SDD)' },
+      // aggiornate dal sistema al salvataggio di PDA e opportunità (vedi records/automations.ts)
+      { name: 'pda_active_count', label: 'PDA attive', type: 'integer', block: 'Statistiche', options: { computed: true } },
+      { name: 'pda_active_total', label: 'Valore PDA attive', type: 'currency', block: 'Statistiche', options: { computed: true } },
+      { name: 'last_pda_date', label: 'Ultima PDA', type: 'date', block: 'Statistiche', options: { computed: true } },
+      { name: 'open_opportunities_count', label: 'Opportunità aperte', type: 'integer', block: 'Statistiche', options: { computed: true } },
       { name: 'description', label: 'Descrizione', type: 'textarea', block: 'Descrizione' },
     ],
   },
