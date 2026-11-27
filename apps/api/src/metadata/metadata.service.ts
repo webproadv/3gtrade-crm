@@ -1,3 +1,4 @@
+import { LINE_DOCUMENTS } from '../records/line-documents';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Tx } from '../db/database.service';
 import { SecurityContext, Sharing, can } from '../security/security-context';
@@ -63,7 +64,7 @@ export class MetadataService {
   visibleFields(sec: SecurityContext, fields: FieldDef[]) {
     return fields
       .filter((f) => !sec.hiddenFields.has(f.id))
-      .map((f) => ({ ...f, editable: !sec.readonlyFields.has(f.id) }));
+      .map((f) => ({ ...f, editable: !sec.readonlyFields.has(f.id) && !f.options.computed }));
   }
 
   /** Moduli che l'utente può vedere, con campi e permessi: alimenta l'interfaccia. */
@@ -73,6 +74,8 @@ export class MetadataService {
       .filter((m) => can(sec, m.name, 'view'))
       .map((m) => ({
         ...m,
+        hasLines: !!LINE_DOCUMENTS[m.name],
+        lineTotals: LINE_DOCUMENTS[m.name]?.totals,
         permissions: {
           view: true,
           create: can(sec, m.name, 'create'),

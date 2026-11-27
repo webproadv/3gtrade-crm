@@ -7,8 +7,10 @@ import {
   computeLabel,
   isUuid,
   normalizeValue,
+  resolveDefault,
   validateRecordData,
 } from '../metadata/field-types';
+import { LINE_DOCUMENTS, LineDocument, formatDocNumber, grandTotal } from './line-documents';
 import { checkModuleRules } from './module-rules';
 import { MetadataService, ModuleDef } from '../metadata/metadata.service';
 import { SecurityContext, can, canAccessRecord } from '../security/security-context';
@@ -254,7 +256,7 @@ export class RecordsService {
     const input: Record<string, unknown> = { ...body.data };
     for (const f of fields) {
       if (editable.has(f.name) && input[f.name] === undefined && f.options.default !== undefined) {
-        input[f.name] = f.options.default;
+        input[f.name] = resolveDefault(f.options.default);
       }
     }
     // valida solo i campi visibili: un obbligatorio nascosto all'utente non blocca la creazione
@@ -263,8 +265,15 @@ export class RecordsService {
     // gli altri campi (nascosti o in sola lettura) ricevono comunque il loro predefinito
     for (const f of await this.meta.listFields(tx, module)) {
       if (data[f.name] !== undefined || f.options.default === undefined) continue;
-      const [v, err] = normalizeValue(f, f.options.default);
+      const [v, err] = normalizeValue(f, resolveDefault(f.options.default));
       if (!err && v !== null) data[f.name] = v;
+    }
+    const doc = LINE_DOCUMENTS[module];
+    if (doc) {
+      data[doc.numberField] = await this.nextNumber(tx, sec, module, doc);
+      data[doc.totals.net] = 0;
+      data[doc.totals.vat] = 0;
+      data[doc.totals.total] = grandTotal(0, 0, data[doc.totals.adjustment]);
     }
     this.checkRules(module, data);
     await this.checkReferences(tx, fields, data);
@@ -281,6 +290,42 @@ export class RecordsService {
     await this.history(tx, sec, row.id, 'create', data);
     await enqueueEvent(tx, sec.tenantId, 'record.created', { module, recordId: row.id, userId: sec.userId, data });
     return this.get(tx, sec, module, row.id);
+  }
+
+  /** Prossimo numero progressivo del documento per l'anno in corso (contatore per azienda, modulo e anno). */
+  private async nextNumber(tx: Tx, sec: SecurityContext, module: string, doc: LineDocument) {
+    const year = new Date().getFullYear();
+    const r = await tx.query(
+      `INSERT INTO record_counters (tenant_id, module, year, last_value) VALUES ($1, $2, $3, 1)
+       ON CONFLICT (tenant_id, module, year) DO UPDATE SET last_value = record_counters.last_value + 1
+       RETURNING last_value`,
+      [sec.tenantId, module, year],
+    );
+    return formatDocNumber(doc.prefix, year, r.rows[0].last_value);
+  }
+
+  /** Record modificabile dall'utente (permesso sul modulo e visibilità del record), per le righe. */
+  async loadWritable(tx: Tx, sec: SecurityContext, module: string, id: string) {
+    const { mod } = await this.context(tx, sec, module, 'edit');
+    const row = await this.load(tx, module, id);
+    if (!canAccessRecord(sec, mod.sharing, row.owner_id, 'write')) throw new ForbiddenException('Record non modificabile');
+    return { mod, row };
+  }
+
+  /** Scrive campi calcolati dal sistema (es. totali delle righe) con storico ed evento. */
+  async setComputed(tx: Tx, sec: SecurityContext, module: string, row: Row, values: Record<string, unknown>) {
+    const next: Record<string, unknown> = { ...row.data };
+    const changes: Record<string, [unknown, unknown]> = {};
+    for (const [k, v] of Object.entries(values)) {
+      const before = row.data[k] ?? null;
+      if (JSON.stringify(before) === JSON.stringify(v)) continue;
+      changes[k] = [before, v];
+      next[k] = v;
+    }
+    if (!Object.keys(changes).length) return;
+    await tx.query(`UPDATE records SET data = $2, updated_at = now() WHERE id = $1`, [row.id, JSON.stringify(next)]);
+    await this.history(tx, sec, row.id, 'update', changes);
+    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: row.id, userId: sec.userId, changes });
   }
 
   async update(
@@ -304,6 +349,13 @@ export class RecordsService {
       changes[k] = [before, v];
       if (v === null) delete next[k];
       else next[k] = v;
+    }
+    const doc = LINE_DOCUMENTS[module];
+    if (doc && doc.totals.adjustment in changes) {
+      const t = doc.totals;
+      const total = grandTotal(Number(next[t.net] ?? 0), Number(next[t.vat] ?? 0), next[t.adjustment]);
+      if (total !== (row.data[t.total] ?? null)) changes[t.total] = [row.data[t.total] ?? null, total];
+      next[t.total] = total;
     }
     this.checkRules(module, next);
     let ownerId = row.owner_id;

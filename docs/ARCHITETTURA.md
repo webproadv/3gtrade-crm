@@ -48,13 +48,20 @@ viene tradotta in SQL su `records` con le stesse regole di visibilità delle lis
 vede sono rifiutati al salvataggio e ignorati quando apre un rapporto condiviso da altri. I nomi dei campi
 entrano nell'SQL come letterali presi dai metadati; i valori dei filtri sono parametri.
 
+**Documenti con righe (PDA).** `LINE_DOCUMENTS` (in `records/line-documents.ts`) indica quali moduli hanno
+righe, il campo del numero e i campi dei totali. Le righe stanno in `record_lines`; il numero viene da
+`record_counters` (un contatore per tenant, modulo e anno, incrementato con un upsert nella stessa
+transazione, quindi senza buchi né doppioni). I campi con `options.computed` non sono modificabili dagli
+utenti: li scrive solo il server, che ricalcola i totali quando cambiano le righe o l'arrotondamento.
+Gli importi di riga sono arrotondati al centesimo e il totale è la somma delle righe arrotondate.
+
 ## Prossimi passi suggeriti
 
 1. Workflow: condizioni sui campi + azioni (aggiorna campo, crea record, invia email) come
    `EventHandler`, configurabili dall'amministrazione.
 2. Promemoria delle attività (notifica prima dell'inizio) come gestore di eventi pianificato.
 3. Lead con conversione in Azienda, Contatto e Opportunità.
-4. Prodotti, preventivi e ordini con righe di dettaglio.
+4. Preventivi e fatture con righe (stesso meccanismo della PDA), conversione PDA da opportunità.
 5. Import CSV, viste di lista salvate con filtri, dashboard con i grafici dei rapporti.
 6. Motore BPM: modellazione con bpmn-js e un sottoinsieme di BPMN eseguito sugli stessi eventi.
 7. Gruppi, regole di condivisione e assegnazione a gruppi.

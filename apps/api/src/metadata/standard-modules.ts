@@ -22,6 +22,11 @@ export interface StandardModule {
    * riceve gli stessi permessi che ha su questo modulo.
    */
   inheritPermissionsFrom?: string;
+  /**
+   * Azioni negate ai profili non amministratori (es. catalogo prodotti in sola lettura per le vendite).
+   * Gli utenti amministratori non sono limitati dai profili.
+   */
+  restrictedActions?: ('create' | 'edit' | 'delete')[];
   fields: StandardField[];
 }
 
@@ -207,6 +212,127 @@ export const STANDARD_MODULES: StandardModule[] = [
         options: { module: 'Opportunities' },
       },
       { name: 'description', label: 'Descrizione', type: 'textarea', block: 'Descrizione' },
+    ],
+  },
+  {
+    name: 'Products',
+    label: 'Prodotti e servizi',
+    labelSingular: 'Prodotto o servizio',
+    icon: 'package',
+    labelFields: ['name'],
+    sharing: 'public_read',
+    inheritPermissionsFrom: 'Accounts',
+    restrictedActions: ['create', 'edit', 'delete'],
+    fields: [
+      { name: 'name', label: 'Nome', type: 'text', block: 'Informazioni prodotto', required: true, inList: true },
+      { name: 'product_code', label: 'Codice', type: 'text', block: 'Informazioni prodotto', inList: true },
+      {
+        name: 'product_type',
+        label: 'Tipo',
+        type: 'picklist',
+        block: 'Informazioni prodotto',
+        inList: true,
+        options: { values: ['Prodotto', 'Servizio'], default: 'Prodotto' },
+      },
+      { name: 'category', label: 'Categoria', type: 'text', block: 'Informazioni prodotto' },
+      {
+        name: 'unit',
+        label: 'Unità di misura',
+        type: 'picklist',
+        block: 'Prezzo',
+        options: { values: ['pz', 'ore', 'giorni', 'kg', 'm', 'mq', 'l', 'a corpo'], default: 'pz' },
+      },
+      { name: 'unit_price', label: 'Prezzo di listino', type: 'currency', block: 'Prezzo', required: true, inList: true },
+      { name: 'vat_rate', label: 'Aliquota IVA', type: 'percent', block: 'Prezzo', inList: true, options: { default: 22 } },
+      { name: 'active', label: 'Attivo', type: 'boolean', block: 'Prezzo', options: { default: true } },
+      { name: 'description', label: 'Descrizione', type: 'textarea', block: 'Descrizione' },
+    ],
+  },
+  {
+    name: 'SalesOrders',
+    label: 'PDA',
+    labelSingular: 'PDA',
+    icon: 'cart',
+    labelFields: ['order_number', 'subject'],
+    sharing: 'private',
+    inheritPermissionsFrom: 'Opportunities',
+    fields: [
+      { name: 'subject', label: 'Oggetto PDA', type: 'text', block: 'Informazioni PDA', required: true, inList: true },
+      {
+        name: 'order_number',
+        label: 'Numero PDA',
+        type: 'text',
+        block: 'Informazioni PDA',
+        inList: true,
+        options: { computed: true },
+      },
+      { name: 'order_date', label: 'Data PDA', type: 'date', block: 'Informazioni PDA', inList: true, options: { default: '$today' } },
+      {
+        name: 'account_id',
+        label: 'Cliente',
+        type: 'relation',
+        block: 'Informazioni PDA',
+        required: true,
+        inList: true,
+        options: { module: 'Accounts' },
+      },
+      { name: 'contact_id', label: 'Contatto', type: 'relation', block: 'Informazioni PDA', options: { module: 'Contacts' } },
+      {
+        name: 'opportunity_id',
+        label: 'Opportunità',
+        type: 'relation',
+        block: 'Informazioni PDA',
+        options: { module: 'Opportunities' },
+      },
+      {
+        name: 'status',
+        label: 'Stato',
+        type: 'picklist',
+        block: 'Informazioni PDA',
+        required: true,
+        inList: true,
+        options: {
+          values: ['Bozza', 'Firmata', 'In verifica', 'Approvata', 'In installazione', 'Completata', 'Annullata'],
+          default: 'Bozza',
+        },
+      },
+      {
+        name: 'product_category',
+        label: 'Categoria prodotto',
+        type: 'picklist',
+        block: 'Informazioni PDA',
+        inList: true,
+        options: {
+          values: ['Fotovoltaico', 'Accumulo', 'Pompa di calore', 'Climatizzazione', 'Infissi', 'Luce', 'Gas', 'Altro'],
+        },
+      },
+      {
+        name: 'source',
+        label: 'Provenienza',
+        type: 'picklist',
+        block: 'Informazioni PDA',
+        options: { values: ['Call center', 'Agente', 'Sito web', 'Referenza', 'Fiera', 'Altro'] },
+      },
+      { name: 'cancel_date', label: 'Data annullamento', type: 'date', block: 'Informazioni PDA' },
+      { name: 'agent_notes', label: 'Note agente', type: 'textarea', block: 'Informazioni PDA' },
+      {
+        name: 'payment_type',
+        label: 'Tipo pagamento',
+        type: 'picklist',
+        block: 'Informazioni finanziarie',
+        options: { values: ['Bonifico', 'Finanziamento', 'Locazione operativa', 'Contanti', 'Assegno', 'Altro'] },
+      },
+      { name: 'financing_company', label: 'Finanziaria', type: 'text', block: 'Informazioni finanziarie' },
+      { name: 'financed_amount', label: 'Importo finanziato', type: 'currency', block: 'Informazioni finanziarie' },
+      { name: 'down_payment', label: 'Anticipo', type: 'currency', block: 'Informazioni finanziarie' },
+      { name: 'survey_date', label: 'Data sopralluogo', type: 'date', block: 'Sopralluogo e installazione' },
+      { name: 'installation_date', label: 'Data installazione', type: 'date', block: 'Sopralluogo e installazione' },
+      { name: 'installer', label: 'Installatore', type: 'text', block: 'Sopralluogo e installazione' },
+      { name: 'subtotal', label: 'Imponibile', type: 'currency', block: 'Totali', options: { computed: true } },
+      { name: 'vat_total', label: 'IVA', type: 'currency', block: 'Totali', options: { computed: true } },
+      { name: 'adjustment', label: 'Arrotondamento', type: 'currency', block: 'Totali' },
+      { name: 'grand_total', label: 'Totale documento', type: 'currency', block: 'Totali', inList: true, options: { computed: true } },
+      { name: 'notes', label: 'Note PDA', type: 'textarea', block: 'Note' },
     ],
   },
 ];
