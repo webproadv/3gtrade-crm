@@ -117,6 +117,13 @@ export async function ensureStandardModules(pool: Pool): Promise<string[]> {
           added.push(`${t.slug}: modulo ${m.name}`);
           continue;
         }
+        if (m.renamedFrom) {
+          const r = await tx.query(
+            `UPDATE modules SET label = $2, label_singular = $3 WHERE name = $1 AND label = $4 AND label_singular = $5`,
+            [m.name, m.label, m.labelSingular, m.renamedFrom.label, m.renamedFrom.labelSingular],
+          );
+          if (r.rowCount) added.push(`${t.slug}: modulo ${m.name} rinominato in ${m.label}`);
+        }
         const existingFields = new Map<string, { id: string; options: { values?: string[] } }>(
           (await tx.query(`SELECT id, name, options FROM fields WHERE module = $1`, [m.name])).rows.map((r) => [r.name, r]),
         );

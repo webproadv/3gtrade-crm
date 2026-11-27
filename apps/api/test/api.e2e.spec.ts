@@ -210,6 +210,7 @@ describe('record e permessi', () => {
     const byModule = Object.fromEntries(rel.body.map((r: any) => [`${r.module}.${r.field}`, r.total]));
     expect(byModule).toEqual({
       'Leads.converted_account_id': 0,
+      'Accounts.parent_account_id': 0,
       'Contacts.account_id': 1,
       'Opportunities.account_id': 1,
       'Activities.account_id': 0,
@@ -349,6 +350,7 @@ describe('attività e calendario', () => {
     await client.query(`DELETE FROM profile_module_permissions WHERE module = 'Activities'`);
     await client.query(`DELETE FROM modules WHERE name = 'Activities'`);
     await client.query(`DELETE FROM fields WHERE module = 'Accounts' AND name = 'pec'`);
+    await client.query(`UPDATE modules SET label = 'Aziende', label_singular = 'Azienda' WHERE name = 'Accounts'`);
     // un elenco con un valore personalizzato dell'azienda e senza uno dei valori standard
     await client.query(
       `UPDATE fields SET options = jsonb_set(options, '{values}', '["Cliente", "Prospect", "Partner", "Fornitore", "Rivenditore"]')
@@ -360,11 +362,13 @@ describe('attività e calendario', () => {
 
     const added = await ensureStandardModules(pool);
     expect(added).toEqual([
+      'other: modulo Accounts rinominato in Clienti',
       'other: valori Accounts.account_type (Concorrente)',
       'other: campo Accounts.pec',
       'other: modulo Activities',
     ]);
     const meta = await as('other').get('/modules/Accounts');
+    expect(meta.body.label).toBe('Clienti');
     expect(meta.body.fields.find((f: any) => f.name === 'account_type').options.values).toEqual([
       'Cliente', 'Prospect', 'Partner', 'Fornitore', 'Rivenditore', 'Concorrente',
     ]);
@@ -759,6 +763,7 @@ describe('lead e conversione', () => {
     });
     const con = await as('rep1').get(`/records/Contacts/${contactId}`);
     expect(con.body.label).toBe('Mario Verdi');
+    expect(acc.body.data.customer_type).toBe('B2B');
     expect(con.body.data.account_id).toBe(accountId);
     const opp = await as('rep1').get(`/records/Opportunities/${opportunityId}`);
     expect(opp.body.data).toMatchObject({
@@ -879,5 +884,23 @@ describe('viste salvate delle liste', () => {
 
     expect((await as('vAdmin').patch(`/list-views/${ids.pub}`, { ...body, name: 'Rinominata' })).body.name).toBe('Rinominata');
     expect((await as('v_rep1').del(`/list-views/${ids.priv}`)).status).toBe(200);
+  });
+});
+
+describe('cliente unico B2B/B2C', () => {
+  it('gestisce clienti privati (B2C) e la gerarchia dei clienti', async () => {
+    const parent = await as('rep1').post('/records/Accounts', { data: { name: 'Gruppo Alberghi S.p.A.' } });
+    expect(parent.body.data.customer_type).toBe('B2B');
+    const child = await as('rep1').post('/records/Accounts', {
+      data: { name: 'Hotel Mare', parent_account_id: parent.body.id, sdi_code: 'ABC1234', legal_rep_last_name: 'Neri' },
+    });
+    expect(child.status).toBe(201);
+    const privato = await as('rep1').post('/records/Accounts', {
+      data: { name: 'Rossi Mario', customer_type: 'B2C', first_name: 'Mario', last_name: 'Rossi', sepa_status: 'Attivo', sepa_iban: 'IT60X0542811101000000123456' },
+    });
+    expect(privato.status).toBe(201);
+    expect((await as('rep1').post('/records/Accounts', { data: { name: 'X', sdi_code: 'TROPPOLUNGO' } })).status).toBe(400);
+    const rel = await as('rep1').get(`/records/Accounts/${parent.body.id}/related`);
+    expect(rel.body.find((r: any) => r.field === 'parent_account_id').total).toBe(1);
   });
 });

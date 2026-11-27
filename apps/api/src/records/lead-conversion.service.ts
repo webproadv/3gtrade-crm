@@ -65,7 +65,11 @@ export class LeadConversionService {
         {
           // cliente privato (B2C): l'anagrafica prende il nome della persona
           name: s('company') || person,
+          customer_type: lead.customer_type,
           account_type: 'Prospect',
+          ...(lead.customer_type === 'B2C' ? { first_name: lead.first_name, last_name: lead.last_name } : {}),
+          mobile: lead.mobile,
+          marketing_consent_revoked: lead.marketing_consent_revoked,
           industry: lead.industry,
           vat_number: lead.vat_number,
           tax_code: lead.tax_code,

@@ -22,6 +22,8 @@ export interface StandardModule {
    * riceve gli stessi permessi che ha su questo modulo.
    */
   inheritPermissionsFrom?: string;
+  /** nomi precedenti: nelle aziende che li hanno ancora vengono aggiornati a quelli nuovi */
+  renamedFrom?: { label: string; labelSingular: string };
   /**
    * Azioni negate ai profili non amministratori (es. catalogo prodotti in sola lettura per le vendite).
    * Gli utenti amministratori non sono limitati dai profili.
@@ -231,13 +233,22 @@ export const STANDARD_MODULES: StandardModule[] = [
   LEADS,
   {
     name: 'Accounts',
-    label: 'Aziende',
-    labelSingular: 'Azienda',
+    label: 'Clienti',
+    labelSingular: 'Cliente',
+    renamedFrom: { label: 'Aziende', labelSingular: 'Azienda' },
     icon: 'building',
     labelFields: ['name'],
     sharing: 'private',
     fields: [
-      { name: 'name', label: 'Ragione sociale', type: 'text', block: 'Informazioni azienda', required: true, inList: true },
+      { name: 'name', label: 'Nome / ragione sociale', type: 'text', block: 'Informazioni azienda', required: true, inList: true },
+      {
+        name: 'customer_type',
+        label: 'Tipologia cliente',
+        type: 'picklist',
+        block: 'Informazioni azienda',
+        inList: true,
+        options: { values: ['B2B', 'B2C'], default: 'B2B' },
+      },
       {
         name: 'account_type',
         label: 'Tipo',
@@ -261,7 +272,50 @@ export const STANDARD_MODULES: StandardModule[] = [
       { name: 'website', label: 'Sito web', type: 'url', block: 'Informazioni azienda' },
       { name: 'employees', label: 'Dipendenti', type: 'integer', block: 'Informazioni azienda' },
       { name: 'annual_revenue', label: 'Fatturato annuo', type: 'currency', block: 'Informazioni azienda' },
+      { name: 'sdi_code', label: 'Codice SDI', type: 'text', block: 'Informazioni azienda', options: { maxLength: 7 } },
+      { name: 'ateco', label: 'Codice ATECO', type: 'text', block: 'Informazioni azienda' },
+      { name: 'condominium', label: 'Condominio', type: 'boolean', block: 'Informazioni azienda' },
+      {
+        name: 'parent_account_id',
+        label: 'Membro di',
+        type: 'relation',
+        block: 'Informazioni azienda',
+        options: { module: 'Accounts' },
+      },
+      { name: 'mobile', label: 'Cellulare', type: 'phone', block: 'Informazioni azienda' },
+      { name: 'marketing_consent_revoked', label: 'Revoca consenso marketing', type: 'boolean', block: 'Informazioni azienda' },
       ...address('billing', 'Indirizzo'),
+      ...address('shipping', 'Indirizzo di spedizione / installazione').map((f) => ({ ...f, inList: false })),
+      { name: 'first_name', label: 'Nome', type: 'text', block: 'Persona fisica (B2C)' },
+      { name: 'last_name', label: 'Cognome', type: 'text', block: 'Persona fisica (B2C)' },
+      { name: 'birth_date', label: 'Data di nascita', type: 'date', block: 'Persona fisica (B2C)' },
+      { name: 'birth_place', label: 'Luogo di nascita', type: 'text', block: 'Persona fisica (B2C)' },
+      {
+        name: 'id_doc_type',
+        label: 'Documento di riconoscimento',
+        type: 'picklist',
+        block: 'Persona fisica (B2C)',
+        options: { values: ["Carta d'identità", 'Patente', 'Passaporto'] },
+      },
+      { name: 'id_doc_number', label: 'Numero documento', type: 'text', block: 'Persona fisica (B2C)' },
+      { name: 'id_doc_expiry', label: 'Scadenza documento', type: 'date', block: 'Persona fisica (B2C)' },
+      { name: 'legal_rep_first_name', label: 'Nome', type: 'text', block: 'Legale rappresentante (B2B)' },
+      { name: 'legal_rep_last_name', label: 'Cognome', type: 'text', block: 'Legale rappresentante (B2B)' },
+      { name: 'legal_rep_tax_code', label: 'Codice fiscale', type: 'text', block: 'Legale rappresentante (B2B)' },
+      { name: 'legal_rep_email', label: 'Email', type: 'email', block: 'Legale rappresentante (B2B)' },
+      { name: 'legal_rep_mobile', label: 'Cellulare', type: 'phone', block: 'Legale rappresentante (B2B)' },
+      { name: 'sepa_iban', label: 'IBAN', type: 'text', block: 'Mandato SEPA (SDD)' },
+      { name: 'sepa_holder', label: 'Intestatario del conto', type: 'text', block: 'Mandato SEPA (SDD)' },
+      { name: 'sepa_holder_tax_code', label: 'Codice fiscale intestatario', type: 'text', block: 'Mandato SEPA (SDD)' },
+      {
+        name: 'sepa_status',
+        label: 'Stato mandato',
+        type: 'picklist',
+        block: 'Mandato SEPA (SDD)',
+        options: { values: ['Da richiedere', 'Richiesto', 'Attivo', 'Revocato'] },
+      },
+      { name: 'sepa_signature_date', label: 'Data firma mandato', type: 'date', block: 'Mandato SEPA (SDD)' },
+      { name: 'sepa_revocation_date', label: 'Data revoca', type: 'date', block: 'Mandato SEPA (SDD)' },
       { name: 'description', label: 'Descrizione', type: 'textarea', block: 'Descrizione' },
     ],
   },

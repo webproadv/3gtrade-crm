@@ -41,7 +41,7 @@ export function ConvertLead({
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
-    if (useExisting && !accountId) return setError("Scegli l'azienda a cui collegare il lead");
+    if (useExisting && !accountId) return setError("Scegli il cliente a cui collegare il lead");
     setBusy(true);
     setError('');
     try {
@@ -71,16 +71,16 @@ export function ConvertLead({
       <div className="form-grid">
         <label className="check">
           <input type="checkbox" checked={useExisting} onChange={(e) => setUseExisting(e.target.checked)} />
-          Collega a un'azienda già presente
+          Collega a un cliente già presente
         </label>
         {useExisting ? (
           <label>
-            <span>Azienda</span>
+            <span>Cliente</span>
             <RecordPicker module="Accounts" value={accountId} onChange={(id) => setAccountId(id)} />
           </label>
         ) : (
           <label>
-            <span>Nuova azienda / cliente</span>
+            <span>Nuovo cliente</span>
             <input value={company || person} disabled />
           </label>
         )}
