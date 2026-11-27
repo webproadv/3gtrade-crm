@@ -10,7 +10,9 @@ import {
   resolveDefault,
   validateRecordData,
 } from '../metadata/field-types';
-import { LINE_DOCUMENTS, LineDocument, formatDocNumber, grandTotal } from './line-documents';
+import { AUTO_NUMBERS, AutoNumber } from './auto-numbers';
+import { OPPORTUNITY_CLOSED, PDA_INACTIVE, beforeSave } from './automations';
+import { LINE_DOCUMENTS, formatDocNumber, grandTotal } from './line-documents';
 import { checkModuleRules } from './module-rules';
 import { MetadataService, ModuleDef } from '../metadata/metadata.service';
 import { SecurityContext, can, canAccessRecord } from '../security/security-context';
@@ -268,13 +270,15 @@ export class RecordsService {
       const [v, err] = normalizeValue(f, resolveDefault(f.options.default));
       if (!err && v !== null) data[f.name] = v;
     }
+    const numbering = AUTO_NUMBERS[module];
+    if (numbering) data[numbering.field] = await this.nextNumber(tx, sec, module, numbering);
     const doc = LINE_DOCUMENTS[module];
     if (doc) {
-      data[doc.numberField] = await this.nextNumber(tx, sec, module, doc);
       data[doc.totals.net] = 0;
       data[doc.totals.vat] = 0;
       data[doc.totals.total] = grandTotal(0, 0, data[doc.totals.adjustment]);
     }
+    Object.assign(data, beforeSave(module, data, null));
     this.checkRules(module, data);
     await this.checkReferences(tx, fields, data);
     const ownerId = body.ownerId ? await this.checkOwner(tx, body.ownerId) : sec.userId;
@@ -288,12 +292,32 @@ export class RecordsService {
       )
     ).rows[0];
     await this.history(tx, sec, row.id, 'create', data);
-    await enqueueEvent(tx, sec.tenantId, 'record.created', { module, recordId: row.id, userId: sec.userId, data });
+    await enqueueEvent(tx, sec.tenantId, 'record.created', { module, recordId: row.id, userId: sec.userId, data, viaWorkflow: sec.viaWorkflow });
+    await this.afterWrite(tx, sec, module, row.id, null, data);
     return this.get(tx, sec, module, row.id);
   }
 
-  /** Prossimo numero progressivo del documento per l'anno in corso (contatore per azienda, modulo e anno). */
-  private async nextNumber(tx: Tx, sec: SecurityContext, module: string, doc: LineDocument) {
+  /**
+   * Crea un record partendo da dati copiati da un altro record (es. conversione del lead):
+   * tiene solo i campi che l'utente può valorizzare nel modulo di destinazione e i valori non vuoti.
+   */
+  async createFrom(
+    tx: Tx,
+    sec: SecurityContext,
+    module: string,
+    values: Record<string, unknown>,
+    ownerId?: string,
+  ) {
+    const { fields } = await this.context(tx, sec, module, 'create');
+    const editable = this.editableSet(fields);
+    const data = Object.fromEntries(
+      Object.entries(values).filter(([k, v]) => editable.has(k) && v !== undefined && v !== null && v !== ''),
+    );
+    return this.create(tx, sec, module, { data, ownerId });
+  }
+
+  /** Prossimo numero progressivo del record per l'anno in corso (contatore per azienda, modulo e anno). */
+  private async nextNumber(tx: Tx, sec: SecurityContext, module: string, numbering: AutoNumber) {
     const year = new Date().getFullYear();
     const r = await tx.query(
       `INSERT INTO record_counters (tenant_id, module, year, last_value) VALUES ($1, $2, $3, 1)
@@ -301,7 +325,7 @@ export class RecordsService {
        RETURNING last_value`,
       [sec.tenantId, module, year],
     );
-    return formatDocNumber(doc.prefix, year, r.rows[0].last_value);
+    return formatDocNumber(numbering.prefix, year, r.rows[0].last_value);
   }
 
   /** Record modificabile dall'utente (permesso sul modulo e visibilità del record), per le righe. */
@@ -325,7 +349,8 @@ export class RecordsService {
     if (!Object.keys(changes).length) return;
     await tx.query(`UPDATE records SET data = $2, updated_at = now() WHERE id = $1`, [row.id, JSON.stringify(next)]);
     await this.history(tx, sec, row.id, 'update', changes);
-    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: row.id, userId: sec.userId, changes });
+    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: row.id, userId: sec.userId, changes, viaWorkflow: sec.viaWorkflow });
+    await this.afterWrite(tx, sec, module, row.id, row.data, next);
   }
 
   async update(
@@ -357,6 +382,11 @@ export class RecordsService {
       if (total !== (row.data[t.total] ?? null)) changes[t.total] = [row.data[t.total] ?? null, total];
       next[t.total] = total;
     }
+    for (const [k, v] of Object.entries(beforeSave(module, next, row.data))) {
+      if (JSON.stringify(next[k] ?? null) === JSON.stringify(v)) continue;
+      changes[k] = [row.data[k] ?? null, v];
+      next[k] = v;
+    }
     this.checkRules(module, next);
     let ownerId = row.owner_id;
     if (body.ownerId && body.ownerId !== row.owner_id) {
@@ -370,7 +400,8 @@ export class RecordsService {
       [id, JSON.stringify(next), computeLabel(mod.labelFields, next), ownerId],
     );
     await this.history(tx, sec, id, 'update', changes);
-    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: id, userId: sec.userId, changes });
+    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: id, userId: sec.userId, changes, viaWorkflow: sec.viaWorkflow });
+    await this.afterWrite(tx, sec, module, id, row.data, next);
     return this.get(tx, sec, module, id);
   }
 
@@ -380,8 +411,75 @@ export class RecordsService {
     if (!canAccessRecord(sec, mod.sharing, row.owner_id, 'write')) throw new ForbiddenException('Record non eliminabile');
     await tx.query(`UPDATE records SET deleted_at = now() WHERE id = $1`, [id]);
     await this.history(tx, sec, id, 'delete', {});
-    await enqueueEvent(tx, sec.tenantId, 'record.deleted', { module, recordId: id, userId: sec.userId });
+    await enqueueEvent(tx, sec.tenantId, 'record.deleted', { module, recordId: id, userId: sec.userId, viaWorkflow: sec.viaWorkflow });
+    await this.afterWrite(tx, sec, module, id, row.data, null);
     return { ok: true };
+  }
+
+  /**
+   * Automatismi dopo il salvataggio (eseguiti dal sistema, nella stessa transazione):
+   * - una PDA che ne sostituisce un'altra porta quella vecchia allo stato "Sostituita";
+   * - PDA e opportunità aggiornano le statistiche del cliente collegato.
+   */
+  private async afterWrite(
+    tx: Tx,
+    sec: SecurityContext,
+    module: string,
+    id: string,
+    before: Record<string, unknown> | null,
+    after: Record<string, unknown> | null,
+  ) {
+    if (module !== 'SalesOrders' && module !== 'Opportunities') return;
+    const accounts = new Set<string>();
+    for (const d of [before, after]) if (d && typeof d.account_id === 'string') accounts.add(d.account_id);
+
+    const replaced = after?.replaces_pda_id;
+    if (
+      module === 'SalesOrders' &&
+      typeof replaced === 'string' &&
+      replaced !== before?.replaces_pda_id &&
+      replaced !== id
+    ) {
+      const old = (
+        await tx.query<Row>(`SELECT * FROM records WHERE id = $1 AND module = 'SalesOrders' AND deleted_at IS NULL`, [
+          replaced,
+        ])
+      ).rows[0];
+      if (old && old.data.status !== 'Sostituita') {
+        await this.setComputed(tx, sec, 'SalesOrders', old, { status: 'Sostituita' });
+      }
+    }
+    for (const accountId of accounts) await this.refreshAccountStats(tx, sec, accountId);
+  }
+
+  /** Statistiche del cliente (come il blocco "Statistici" di vtenext), ricalcolate dal sistema. */
+  private async refreshAccountStats(tx: Tx, sec: SecurityContext, accountId: string) {
+    const account = (
+      await tx.query<Row>(`SELECT * FROM records WHERE id = $1 AND module = 'Accounts' AND deleted_at IS NULL`, [
+        accountId,
+      ])
+    ).rows[0];
+    if (!account) return;
+    const fields = new Set((await this.meta.listFields(tx, 'Accounts')).map((f) => f.name));
+    if (!fields.has('pda_active_count')) return;
+    const s = (
+      await tx.query(
+        `SELECT
+           count(*) FILTER (WHERE r.module = 'SalesOrders' AND NOT (coalesce(r.data->>'status', '') = ANY($2))) AS pda_active,
+           sum((r.data->>'grand_total')::numeric) FILTER (WHERE r.module = 'SalesOrders' AND NOT (coalesce(r.data->>'status', '') = ANY($2))) AS pda_total,
+           max(r.data->>'order_date') FILTER (WHERE r.module = 'SalesOrders') AS last_pda,
+           count(*) FILTER (WHERE r.module = 'Opportunities' AND NOT (coalesce(r.data->>'sales_stage', '') = ANY($3))) AS opp_open
+         FROM records r
+        WHERE r.module IN ('SalesOrders', 'Opportunities') AND r.deleted_at IS NULL AND r.data->>'account_id' = $1`,
+        [accountId, PDA_INACTIVE, OPPORTUNITY_CLOSED],
+      )
+    ).rows[0];
+    await this.setComputed(tx, sec, 'Accounts', account, {
+      pda_active_count: Number(s.pda_active),
+      pda_active_total: s.pda_total === null ? 0 : Number(s.pda_total),
+      last_pda_date: s.last_pda ?? null,
+      open_opportunities_count: Number(s.opp_open),
+    });
   }
 
   /** Liste correlate: record di altri moduli che puntano a questo tramite un campo relazione. */

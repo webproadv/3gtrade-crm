@@ -3,6 +3,7 @@ import * as bcrypt from 'bcryptjs';
 import { STANDARD_MODULES, StandardModule } from '../metadata/standard-modules';
 import { Tx } from '../db/database.service';
 import { DEFAULT_REPORTS } from '../reports/default-reports';
+import { DEFAULT_WORKFLOWS } from '../workflows/default-workflows';
 
 export interface NewTenant {
   slug: string;
@@ -74,6 +75,30 @@ async function insertDefaultReports(tx: Tx, tenantId: string, ownerId: string) {
   await tx.query(`UPDATE tenants SET default_reports_at = now() WHERE id = $1`, [tenantId]);
 }
 
+/** Workflow di esempio (vedi default-workflows.ts), creati una sola volta per azienda. */
+async function insertDefaultWorkflows(tx: Tx, tenantId: string, ownerId: string) {
+  const modules = new Set((await tx.query(`SELECT name FROM modules`)).rows.map((r) => r.name));
+  for (const w of DEFAULT_WORKFLOWS) {
+    if (!modules.has(w.module)) continue;
+    await tx.query(
+      `INSERT INTO workflows (tenant_id, name, description, module, active, trigger, conditions, actions, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        tenantId,
+        w.name,
+        w.description,
+        w.module,
+        w.active,
+        JSON.stringify(w.trigger),
+        JSON.stringify(w.conditions),
+        JSON.stringify(w.actions),
+        ownerId,
+      ],
+    );
+  }
+  await tx.query(`UPDATE tenants SET default_workflows_at = now() WHERE id = $1`, [tenantId]);
+}
+
 /**
  * Allinea i tenant esistenti ai moduli standard del codice: aggiunge i moduli
  * e i campi standard mancanti senza toccare quelli già presenti o personalizzati.
@@ -83,8 +108,8 @@ async function insertDefaultReports(tx: Tx, tenantId: string, ownerId: string) {
 export async function ensureStandardModules(pool: Pool): Promise<string[]> {
   const added: string[] = [];
   const tenants = (
-    await pool.query<{ id: string; slug: string; default_reports_at: Date | null }>(
-      `SELECT id, slug, default_reports_at FROM tenants`,
+    await pool.query<{ id: string; slug: string; default_reports_at: Date | null; default_workflows_at: Date | null }>(
+      `SELECT id, slug, default_reports_at, default_workflows_at FROM tenants`,
     )
   ).rows;
   for (const t of tenants) {
@@ -117,15 +142,45 @@ export async function ensureStandardModules(pool: Pool): Promise<string[]> {
           added.push(`${t.slug}: modulo ${m.name}`);
           continue;
         }
-        const fields = new Set(
-          (await tx.query(`SELECT name FROM fields WHERE module = $1`, [m.name])).rows.map((r) => r.name),
+        if (m.renamedFrom) {
+          const r = await tx.query(
+            `UPDATE modules SET label = $2, label_singular = $3 WHERE name = $1 AND label = $4 AND label_singular = $5`,
+            [m.name, m.label, m.labelSingular, m.renamedFrom.label, m.renamedFrom.labelSingular],
+          );
+          if (r.rowCount) added.push(`${t.slug}: modulo ${m.name} rinominato in ${m.label}`);
+        }
+        const existingFields = new Map<string, { id: string; options: { values?: string[] } }>(
+          (await tx.query(`SELECT id, name, options FROM fields WHERE module = $1`, [m.name])).rows.map((r) => [r.name, r]),
         );
         const max = (await tx.query(`SELECT coalesce(max(sort_order), 0) AS m FROM fields WHERE module = $1`, [m.name])).rows[0].m;
         let order = max;
         for (const f of m.fields) {
-          if (fields.has(f.name)) continue;
+          const cur = existingFields.get(f.name);
+          if (cur) {
+            // nuovi valori degli elenchi standard: aggiunti in coda, senza togliere quelli dell'azienda
+            const have = cur.options.values ?? [];
+            const missing = (f.options?.values ?? []).filter((v) => !have.includes(v));
+            if (missing.length && (f.type === 'picklist' || f.type === 'multipicklist')) {
+              await tx.query(`UPDATE fields SET options = jsonb_set(options, '{values}', $2::jsonb) WHERE id = $1`, [
+                cur.id,
+                JSON.stringify([...have, ...missing]),
+              ]);
+              added.push(`${t.slug}: valori ${m.name}.${f.name} (${missing.join(', ')})`);
+            }
+            continue;
+          }
           await insertField(tx, t.id, m.name, f, (order += 10));
           added.push(`${t.slug}: campo ${m.name}.${f.name}`);
+        }
+      }
+      // aziende create prima dei workflow: ricevono una sola volta i workflow di esempio
+      if (!t.default_workflows_at) {
+        const admin = (
+          await tx.query(`SELECT id FROM users WHERE is_admin AND active ORDER BY created_at LIMIT 1`)
+        ).rows[0];
+        if (admin) {
+          await insertDefaultWorkflows(tx, t.id, admin.id);
+          added.push(`${t.slug}: workflow di esempio`);
         }
       }
     });
@@ -201,6 +256,7 @@ export async function provisionTenant(pool: Pool, t: NewTenant) {
     ).rows[0].id;
 
     await insertDefaultReports(tx, tenantId, adminId);
+    await insertDefaultWorkflows(tx, tenantId, adminId);
 
     return {
       tenantId,

@@ -3,6 +3,8 @@ import { Layout } from './components/Layout';
 import { AdminModules } from './pages/admin/AdminModules';
 import { AdminRoles } from './pages/admin/AdminRoles';
 import { AdminUsers } from './pages/admin/AdminUsers';
+import { AdminWorkflows } from './pages/admin/AdminWorkflows';
+import { WorkflowEditor } from './pages/admin/WorkflowEditor';
 import { Calendar } from './pages/Calendar';
 import { ChangePassword } from './pages/ChangePassword';
 import { Home } from './pages/Home';
@@ -40,6 +42,9 @@ export function App() {
             <Route path="admin/modules" element={<AdminModules />} />
             <Route path="admin/users" element={<AdminUsers />} />
             <Route path="admin/roles" element={<AdminRoles />} />
+            <Route path="admin/workflows" element={<AdminWorkflows />} />
+            <Route path="admin/workflows/new" element={<WorkflowEditor />} />
+            <Route path="admin/workflows/:id" element={<WorkflowEditor />} />
           </>
         )}
         <Route path="*" element={<Navigate to="/" replace />} />

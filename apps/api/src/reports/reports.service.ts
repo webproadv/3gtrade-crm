@@ -161,10 +161,27 @@ export class ReportsService {
   }
 
   /** Controlla che la definizione sia coerente con i metadati (al salvataggio). */
-  private async validate(tx: Tx, sec: SecurityContext, module: string, config: ReportConfig) {
+  async validate(tx: Tx, sec: SecurityContext, module: string, config: ReportConfig) {
     await this.meta.getModule(tx, module);
     if (!can(sec, module, 'view')) throw new ForbiddenException('Permesso negato sul modulo');
     await this.plan(tx, sec, module, config, true);
+  }
+
+  /**
+   * Condizione SQL (alias r) dei record del modulo che rispettano i filtri, per i workflow.
+   * strict = true rifiuta campi sconosciuti o non visibili (al salvataggio del workflow).
+   */
+  async filterWhere(tx: Tx, sec: SecurityContext, module: string, filters: ReportConfig['filters'], strict = false) {
+    const config: ReportConfig = {
+      columns: ['ownerId'],
+      filters,
+      groupOrder: 'key',
+      totals: [],
+      chart: 'none',
+      groupBy: null,
+    };
+    const plan = await this.plan(tx, sec, module, config, strict);
+    return { where: plan.where, params: [...plan.params] };
   }
 
   /**
@@ -410,6 +427,64 @@ export class ReportsService {
       groups,
       hidden: plan.hidden,
       refs,
+    };
+  }
+
+  /**
+   * Una pagina di record secondo una vista salvata (colonne, filtri, ordinamento), con ricerca sul nome
+   * e filtro sull'assegnatario: "mine" (a me), "others" (agli altri) o l'id di un utente.
+   * Restituisce solo i valori delle colonne visibili all'utente.
+   */
+  async page(
+    tx: Tx,
+    sec: SecurityContext,
+    module: string,
+    view: Pick<ReportConfig, 'columns' | 'filters' | 'sort'>,
+    opts: { page?: number; pageSize?: number; q?: string; owner?: string } = {},
+  ) {
+    const config: ReportConfig = { ...view, groupOrder: 'key', totals: [], chart: 'none', groupBy: null };
+    const plan = await this.plan(tx, sec, module, config, false);
+    const params = [...plan.params];
+    const where = [plan.where];
+    if (opts.q?.trim()) {
+      params.push(`%${opts.q.trim().toLowerCase()}%`);
+      where.push(`lower(r.label) LIKE $${params.length}`);
+    }
+    if (opts.owner === 'mine' || opts.owner === 'others') {
+      params.push(sec.userId);
+      where.push(`r.owner_id ${opts.owner === 'mine' ? '=' : '<>'} $${params.length}`);
+    } else if (opts.owner) {
+      if (!isUuid(opts.owner)) throw new BadRequestException('assegnatario non valido');
+      params.push(opts.owner);
+      where.push(`r.owner_id = $${params.length}`);
+    }
+    const w = where.join(' AND ');
+    const total = Number((await tx.query(`SELECT count(*) AS n FROM records r WHERE ${w}`, params)).rows[0].n);
+    const pageSize = Math.min(Math.max(opts.pageSize ?? 25, 1), 200);
+    const page = Math.max(opts.page ?? 1, 1);
+    const rows = (
+      await tx.query<Row>(
+        `SELECT r.* FROM records r WHERE ${w} ORDER BY ${plan.orderSql} NULLS LAST, r.id
+          LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}`,
+        params,
+      )
+    ).rows;
+    const fieldCols = plan.columns.filter((c) => c.field);
+    return {
+      columns: plan.columns.map(({ field: _f, ...c }) => c),
+      items: rows.map((row) => ({
+        id: row.id,
+        label: row.label,
+        ownerId: row.owner_id,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        data: Object.fromEntries(fieldCols.map((c) => [c.key, row.data[c.key] ?? null])),
+      })),
+      total,
+      page,
+      pageSize,
+      hidden: plan.hidden,
+      refs: await this.records.refs(tx, rows, fieldCols.map((c) => c.field!)),
     };
   }
 

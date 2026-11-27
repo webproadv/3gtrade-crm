@@ -13,6 +13,8 @@ import { loadConfig } from '../src/config';
 import { assertRlsEnforced, migrate } from '../src/db/migrator';
 import { EVENT_HANDLERS, EventHandler } from '../src/events/event-handlers';
 import { OutboxWorker } from '../src/events/outbox.worker';
+import { MailerService } from '../src/workflows/mailer.service';
+import { WorkflowEngine } from '../src/workflows/workflow-engine';
 import { ensureStandardModules, provisionFromEnv, provisionTenant } from '../src/tenants/provisioning';
 
 const DB = process.env.TEST_DATABASE_URL ?? 'postgres://crm:crm@localhost:5432/crm_test';
@@ -65,7 +67,7 @@ beforeAll(async () => {
     },
   };
   app = await NestFactory.create(
-    AppModule.forRoot({ ...loadConfig({}), databaseUrl: DB, workerEnabled: false }),
+    AppModule.forRoot({ ...loadConfig({}), databaseUrl: DB, workerEnabled: false, smtpUrl: 'json' }),
     { logger: false },
   );
   // aggiunge un gestore di test all'elenco dei gestori di eventi
@@ -208,7 +210,14 @@ describe('record e permessi', () => {
 
     const rel = await as('rep1').get(`/records/Accounts/${accountId}/related`);
     const byModule = Object.fromEntries(rel.body.map((r: any) => [`${r.module}.${r.field}`, r.total]));
-    expect(byModule).toEqual({ 'Contacts.account_id': 1, 'Opportunities.account_id': 1, 'Activities.account_id': 0, 'SalesOrders.account_id': 0 });
+    expect(byModule).toEqual({
+      'Leads.converted_account_id': 0,
+      'Accounts.parent_account_id': 0,
+      'Contacts.account_id': 1,
+      'Opportunities.account_id': 1,
+      'Activities.account_id': 0,
+      'SalesOrders.account_id': 0,
+    });
 
     const upd = await as('rep1').patch(`/records/Opportunities/${opp.body.id}`, { data: { sales_stage: 'Chiusa vinta' } });
     expect(upd.body.data.sales_stage).toBe('Chiusa vinta');
@@ -343,12 +352,28 @@ describe('attività e calendario', () => {
     await client.query(`DELETE FROM profile_module_permissions WHERE module = 'Activities'`);
     await client.query(`DELETE FROM modules WHERE name = 'Activities'`);
     await client.query(`DELETE FROM fields WHERE module = 'Accounts' AND name = 'pec'`);
+    await client.query(`UPDATE modules SET label = 'Aziende', label_singular = 'Azienda' WHERE name = 'Accounts'`);
+    // un elenco con un valore personalizzato dell'azienda e senza uno dei valori standard
+    await client.query(
+      `UPDATE fields SET options = jsonb_set(options, '{values}', '["Cliente", "Prospect", "Partner", "Fornitore", "Rivenditore"]')
+        WHERE module = 'Accounts' AND name = 'account_type'`,
+    );
     await client.query('COMMIT');
     client.release();
     expect((await as('other').get('/records/Activities')).status).toBe(404);
 
     const added = await ensureStandardModules(pool);
-    expect(added).toEqual(['other: campo Accounts.pec', 'other: modulo Activities']);
+    expect(added).toEqual([
+      'other: modulo Accounts rinominato in Clienti',
+      'other: valori Accounts.account_type (Concorrente)',
+      'other: campo Accounts.pec',
+      'other: modulo Activities',
+    ]);
+    const meta = await as('other').get('/modules/Accounts');
+    expect(meta.body.label).toBe('Clienti');
+    expect(meta.body.fields.find((f: any) => f.name === 'account_type').options.values).toEqual([
+      'Cliente', 'Prospect', 'Partner', 'Fornitore', 'Rivenditore', 'Concorrente',
+    ]);
     expect((await as('other').get('/records/Activities')).status).toBe(200);
     expect(await ensureStandardModules(pool)).toEqual([]);
   });
@@ -667,11 +692,469 @@ describe('PDA e prodotti', () => {
     expect((await as('pda_rep1').del(`/records/SalesOrders/${ids.order}`)).status).toBe(403);
   });
 
+  it('valida percentuali e annullamento della PDA', async () => {
+    const pct = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, {
+      data: { down_payment_pct: 30, start_works_pct: 40, balance_pct: 40 },
+    });
+    expect(pct.status).toBe(400);
+    expect(pct.body.errors.balance_pct).toBeDefined();
+    const ok = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, {
+      data: { down_payment_pct: 30, start_works_pct: 40, balance_pct: 30, financing_approval: 'In attesa', pod: 'IT001E12345678' },
+    });
+    expect(ok.status).toBe(200);
+    const cancel = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { status: 'Annullata' } });
+    // la data di annullamento viene proposta dal sistema, ma non si può togliere
+    expect(cancel.body.data.cancel_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    const cleared = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { cancel_date: null } });
+    expect(cleared.body.errors.cancel_date).toBeDefined();
+    const st = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { status: 'In approvazione finanziaria' } });
+    expect(st.body.data.status).toBe('In approvazione finanziaria');
+  });
+
   it('i totali delle PDA si usano nei rapporti', async () => {
     const r = await as('pdaAdmin').post('/reports/run', {
       module: 'SalesOrders',
       config: { columns: ['order_number', 'grand_total'], groupBy: { field: 'status' }, totals: [{ field: 'grand_total', fn: 'sum' }] },
     });
     expect(r.body.totals).toEqual({ count: 2, 'sum:grand_total': 68.6 });
+  });
+});
+
+describe('lead e conversione', () => {
+  const ids: Record<string, string> = {};
+
+  it('numera i lead e propone lo stato iniziale', async () => {
+    const a = await as('rep1').post('/records/Leads', {
+      data: {
+        first_name: 'Mario',
+        last_name: 'Verdi',
+        company: 'Hotel Sole',
+        customer_type: 'B2B',
+        email: 'info@hotelsole.test',
+        phone: '0541000000',
+        lead_source: 'Referenza',
+        product_interest: ['Fotovoltaico', 'Accumulo'],
+        budget: 25000,
+        vat_number: '01234567890',
+        lead_city: 'Rimini',
+        appointment_notes: 'Tetto piano 400 mq',
+      },
+    });
+    expect(a.status).toBe(201);
+    expect(a.body.data.lead_number).toMatch(/^LEA-\d{4}-00001$/);
+    expect(a.body.data.lead_status).toBe('Nuovo');
+    ids.lead = a.body.id;
+    const b = await as('rep1').post('/records/Leads', { data: { last_name: 'Neri' } });
+    expect(b.body.data.lead_number).toMatch(/^LEA-\d{4}-00002$/);
+    ids.privateLead = b.body.id;
+    const forced = await as('rep1').patch(`/records/Leads/${ids.lead}`, { data: { lead_number: 'X', converted_at: '2026-01-01T00:00:00Z' } });
+    expect(forced.status).toBe(400);
+    const act = await as('rep1').post('/records/Activities', {
+      data: { subject: 'Richiamare', activity_type: 'Chiamata', start: '2027-01-10T09:00:00Z', lead_id: ids.lead },
+    });
+    expect(act.status).toBe(201);
+    ids.activity = act.body.id;
+  });
+
+  it('converte il lead in azienda, contatto e opportunità', async () => {
+    expect((await as('rep2').post(`/leads/${ids.lead}/convert`, {})).status).toBe(403);
+    const r = await as('rep1').post(`/leads/${ids.lead}/convert`, { opportunity: { closeDate: '2027-03-31' } });
+    expect(r.status).toBe(201);
+    const { accountId, contactId, opportunityId } = r.body;
+
+    const acc = await as('rep1').get(`/records/Accounts/${accountId}`);
+    expect(acc.body.data).toMatchObject({
+      name: 'Hotel Sole', vat_number: '01234567890', billing_city: 'Rimini', account_type: 'Prospect', email: 'info@hotelsole.test',
+    });
+    const con = await as('rep1').get(`/records/Contacts/${contactId}`);
+    expect(con.body.label).toBe('Mario Verdi');
+    expect(acc.body.data.customer_type).toBe('B2B');
+    expect(con.body.data.account_id).toBe(accountId);
+    const opp = await as('rep1').get(`/records/Opportunities/${opportunityId}`);
+    expect(opp.body.data).toMatchObject({
+      name: 'Hotel Sole - Fotovoltaico + Accumulo', account_id: accountId, contact_id: contactId, amount: 25000,
+      close_date: '2027-03-31', sales_stage: 'Qualificazione', lead_source: 'Passaparola', description: 'Tetto piano 400 mq',
+    });
+
+    const lead = await as('rep1').get(`/records/Leads/${ids.lead}`);
+    expect(lead.body.data).toMatchObject({
+      lead_status: 'Convertito', converted_account_id: accountId, converted_contact_id: contactId, converted_opportunity_id: opportunityId,
+    });
+    expect(lead.body.data.converted_at).toBeTruthy();
+    const act = await as('rep1').get(`/records/Activities/${ids.activity}`);
+    expect(act.body.data).toMatchObject({ lead_id: ids.lead, account_id: accountId, contact_id: contactId, opportunity_id: opportunityId });
+
+    // l'azienda mostra il lead di provenienza tra i collegati
+    const rel = await as('rep1').get(`/records/Accounts/${accountId}/related`);
+    expect(rel.body.find((x: any) => x.module === 'Leads').total).toBe(1);
+
+    const again = await as('rep1').post(`/leads/${ids.lead}/convert`, {});
+    expect(again.status).toBe(400);
+    ids.account = accountId;
+  });
+
+  it('cliente privato senza opportunità o collegato a un\'azienda esistente', async () => {
+    const r = await as('rep1').post(`/leads/${ids.privateLead}/convert`, { createOpportunity: false });
+    expect(r.status).toBe(201);
+    expect(r.body.opportunityId).toBeNull();
+    expect((await as('rep1').get(`/records/Accounts/${r.body.accountId}`)).body.label).toBe('Neri');
+
+    const lead = (await as('rep1').post('/records/Leads', { data: { last_name: 'Gialli', company: 'Hotel Sole' } })).body.id;
+    const linked = await as('rep1').post(`/leads/${lead}/convert`, { accountId: ids.account, createOpportunity: false });
+    expect(linked.status).toBe(201);
+    expect(linked.body.accountId).toBe(ids.account);
+    const contacts = await as('rep1').get(`/records/Accounts/${ids.account}/related`);
+    expect(contacts.body.find((x: any) => x.module === 'Contacts').total).toBe(2);
+
+    // azienda di un altro tenant o inesistente
+    const bad = await as('rep1').post(`/leads/${lead}/convert`, { accountId: '00000000-0000-0000-0000-000000000000' });
+    expect([400, 404]).toContain(bad.status);
+  });
+});
+
+describe('viste salvate delle liste', () => {
+  let v: Awaited<ReturnType<typeof provisionTenant>>;
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    v = await provisionTenant(pool, {
+      slug: 'viste',
+      name: 'Viste',
+      admin: { email: 'admin@viste.test', password: PASSWORD, firstName: 'Ada', lastName: 'Viste' },
+    });
+    tokens.vAdmin = await login('viste', 'admin@viste.test');
+    for (const u of ['rep1', 'rep2']) {
+      await as('vAdmin').post('/admin/users', {
+        email: `${u}@viste.test`, password: PASSWORD, firstName: u, lastName: 'Viste', roleId: v.roles.salesRep,
+      });
+      tokens[`v_${u}`] = await login('viste', `${u}@viste.test`);
+    }
+    const mk = (who: string, data: object) => as(who).post('/records/Leads', { data });
+    await mk('v_rep1', { last_name: 'Alfa', lead_status: 'Nuovo', budget: 5000 });
+    await mk('v_rep1', { last_name: 'Beta', lead_status: 'Da contattare', budget: 20000 });
+    await mk('v_rep1', { last_name: 'Gamma', lead_status: 'Da contattare', budget: 1000 });
+    await mk('vAdmin', { last_name: 'Delta', lead_status: 'Da contattare', budget: 9000 });
+  });
+
+  it('esegue una definizione con filtri, ordinamento, ricerca e assegnatario', async () => {
+    const config = {
+      columns: ['last_name', 'lead_status', 'budget', 'ownerId'],
+      filters: [{ field: 'lead_status', op: 'eq', value: 'Da contattare' }],
+      sort: { field: 'budget', dir: 'desc' },
+    };
+    const all = await as('vAdmin').post('/list-views/query', { module: 'Leads', config });
+    expect(all.status).toBe(201);
+    expect(all.body.items.map((x: any) => x.data.last_name)).toEqual(['Beta', 'Delta', 'Gamma']);
+    expect(all.body.columns.map((c: any) => c.key)).toEqual(config.columns);
+
+    const mine = await as('vAdmin').post('/list-views/query', { module: 'Leads', config, owner: 'mine' });
+    expect(mine.body.items.map((x: any) => x.data.last_name)).toEqual(['Delta']);
+    const others = await as('vAdmin').post('/list-views/query', { module: 'Leads', config, owner: 'others', sort: { field: 'last_name', dir: 'asc' } });
+    expect(others.body.items.map((x: any) => x.data.last_name)).toEqual(['Beta', 'Gamma']);
+    const search = await as('vAdmin').post('/list-views/query', { module: 'Leads', config, q: 'gam' });
+    expect(search.body.total).toBe(1);
+
+    // il commerciale vede solo i propri record anche attraverso la vista
+    const rep2 = await as('v_rep2').post('/list-views/query', { module: 'Leads', config });
+    expect(rep2.body.total).toBe(0);
+  });
+
+  it('salva viste personali e pubbliche e ne controlla i permessi', async () => {
+    const body = {
+      name: 'Da contattare',
+      module: 'Leads',
+      shared: true,
+      config: { columns: ['last_name', 'budget'], filters: [{ field: 'lead_status', op: 'eq', value: 'Da contattare' }] },
+    };
+    const pub = await as('v_rep1').post('/list-views', body);
+    expect(pub.status).toBe(201);
+    ids.pub = pub.body.id;
+    const priv = await as('v_rep1').post('/list-views', { ...body, name: 'Le mie', shared: false });
+    ids.priv = priv.body.id;
+
+    const seenBy2 = await as('v_rep2').get('/list-views?module=Leads');
+    expect(seenBy2.body.map((x: any) => x.name)).toEqual(['Da contattare']);
+    expect(seenBy2.body[0].canEdit).toBe(false);
+    expect((await as('v_rep2').get(`/list-views/${ids.priv}`)).status).toBe(404);
+    expect((await as('v_rep2').patch(`/list-views/${ids.pub}`, body)).status).toBe(403);
+    expect((await as('v_rep2').del(`/list-views/${ids.pub}`)).status).toBe(403);
+
+    const run = await as('vAdmin').post('/list-views/query', { module: 'Leads', viewId: ids.pub });
+    expect(run.body.total).toBe(3);
+    expect((await as('vAdmin').post('/list-views/query', { module: 'Accounts', viewId: ids.pub })).status).toBe(400);
+
+    const bad = await as('v_rep1').post('/list-views', { ...body, config: { columns: ['nope'], filters: [] } });
+    expect(bad.status).toBe(400);
+    expect((await as('other').get(`/list-views/${ids.pub}`)).status).toBe(404);
+
+    expect((await as('vAdmin').patch(`/list-views/${ids.pub}`, { ...body, name: 'Rinominata' })).body.name).toBe('Rinominata');
+    expect((await as('v_rep1').del(`/list-views/${ids.priv}`)).status).toBe(200);
+  });
+});
+
+describe('cliente unico B2B/B2C', () => {
+  it('gestisce clienti privati (B2C) e la gerarchia dei clienti', async () => {
+    const parent = await as('rep1').post('/records/Accounts', { data: { name: 'Gruppo Alberghi S.p.A.' } });
+    expect(parent.body.data.customer_type).toBe('B2B');
+    const child = await as('rep1').post('/records/Accounts', {
+      data: { name: 'Hotel Mare', parent_account_id: parent.body.id, sdi_code: 'ABC1234', legal_rep_last_name: 'Neri' },
+    });
+    expect(child.status).toBe(201);
+    const privato = await as('rep1').post('/records/Accounts', {
+      data: { name: 'Rossi Mario', customer_type: 'B2C', first_name: 'Mario', last_name: 'Rossi', sepa_status: 'Attivo', sepa_iban: 'IT60X0542811101000000123456' },
+    });
+    expect(privato.status).toBe(201);
+    expect((await as('rep1').post('/records/Accounts', { data: { name: 'X', sdi_code: 'TROPPOLUNGO' } })).status).toBe(400);
+    const rel = await as('rep1').get(`/records/Accounts/${parent.body.id}/related`);
+    expect(rel.body.find((r: any) => r.field === 'parent_account_id').total).toBe(1);
+  });
+});
+
+describe('commenti sui record', () => {
+  it('chi vede il record legge e scrive commenti; elimina solo i propri', async () => {
+    const acc = (await as('rep1').post('/records/Accounts', { data: { name: 'Cliente con commenti' } })).body.id;
+    const url = `/records/Accounts/${acc}/comments`;
+    const c1 = await as('rep1').post(url, { body: 'Richiamare lunedì' });
+    expect(c1.status).toBe(201);
+    const c2 = await as('manager').post(url, { body: 'Ok, ci penso io' });
+    expect(c2.status).toBe(201);
+    expect((await as('rep1').post(url, { body: '   ' })).status).toBe(400);
+    expect((await as('rep2').get(url)).status).toBe(403);
+    expect((await as('rep2').post(url, { body: 'x' })).status).toBe(403);
+
+    const list = await as('rep1').get(url);
+    expect(list.body.map((c: any) => [c.body, c.canDelete])).toEqual([
+      ['Richiamare lunedì', true],
+      ['Ok, ci penso io', false],
+    ]);
+    expect((await as('rep1').del(`${url}/${c2.body.id}`)).status).toBe(403);
+    expect((await as('rep1').del(`${url}/${c1.body.id}`)).status).toBe(200);
+    expect((await as('admin').del(`${url}/${c2.body.id}`)).status).toBe(200);
+    expect((await as('rep1').get(url)).body).toHaveLength(0);
+  });
+});
+
+describe('automatismi al salvataggio', () => {
+  it('imposta la probabilità e la data di annullamento', async () => {
+    const acc = (await as('admin').post('/records/Accounts', { data: { name: 'Cliente automatismi' } })).body.id;
+    const opp = await as('admin').post('/records/Opportunities', {
+      data: { name: 'Auto', account_id: acc, close_date: '2027-01-31', sales_stage: 'Proposta', probability: 40 },
+    });
+    const won = await as('admin').patch(`/records/Opportunities/${opp.body.id}`, {
+      data: { sales_stage: 'Chiusa vinta' },
+    });
+    expect(won.body.data.probability).toBe(100);
+    const lost = await as('admin').patch(`/records/Opportunities/${opp.body.id}`, {
+      data: { sales_stage: 'Chiusa persa' },
+    });
+    expect(lost.body.data.probability).toBe(0);
+
+    const pda = (await as('admin').post('/records/SalesOrders', { data: { subject: 'Da annullare', account_id: acc } }))
+      .body.id;
+    const cancelled = await as('admin').patch(`/records/SalesOrders/${pda}`, { data: { status: 'Annullata' } });
+    expect(cancelled.status).toBe(200);
+    expect(cancelled.body.data.cancel_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  it('sostituisce la PDA precedente e aggiorna le statistiche del cliente', async () => {
+    const acc = (await as('admin').post('/records/Accounts', { data: { name: 'Cliente statistiche' } })).body.id;
+    const stats = async () => (await as('admin').get(`/records/Accounts/${acc}`)).body.data;
+
+    const first = (
+      await as('admin').post('/records/SalesOrders', { data: { subject: 'Prima', account_id: acc, status: 'Firmata' } })
+    ).body.id;
+    await as('admin').put(`/records/SalesOrders/${first}/lines`, {
+      lines: [{ description: 'Impianto', quantity: 1, unitPrice: 1000, vatRate: 0 }],
+    });
+    await as('admin').post('/records/Opportunities', {
+      data: { name: 'Aperta', account_id: acc, close_date: '2027-01-31', sales_stage: 'Proposta' },
+    });
+    expect(await stats()).toMatchObject({ pda_active_count: 1, pda_active_total: 1000, open_opportunities_count: 1 });
+    expect((await stats()).last_pda_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    const second = await as('admin').post('/records/SalesOrders', {
+      data: { subject: 'Seconda', account_id: acc, status: 'Firmata', replaces_pda_id: first },
+    });
+    expect(second.status).toBe(201);
+    expect((await as('admin').get(`/records/SalesOrders/${first}`)).body.data.status).toBe('Sostituita');
+    expect(await stats()).toMatchObject({ pda_active_count: 1, pda_active_total: 0 });
+
+    // i campi statistici non sono modificabili a mano
+    expect((await as('admin').patch(`/records/Accounts/${acc}`, { data: { pda_active_count: 9 } })).status).toBe(400);
+    await as('admin').del(`/records/SalesOrders/${second.body.id}`);
+    expect((await stats()).pda_active_count).toBe(0);
+  });
+});
+
+describe('workflow', () => {
+  const flush = async () => {
+    const worker = app.get(OutboxWorker);
+    while ((await worker.tick()) > 0);
+  };
+  const mailer = () => app.get(MailerService);
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    await flush();
+    ids.account = (await as('admin').post('/records/Accounts', { data: { name: 'Solare Srl' } })).body.id;
+    ids.contact = (
+      await as('admin').post('/records/Contacts', {
+        data: { first_name: 'Lia', last_name: 'Verdi', email: 'lia@cliente.test', account_id: ids.account },
+      })
+    ).body.id;
+  });
+
+  it('i workflow di esempio sono creati con l\'azienda e li gestisce solo l\'amministratore', async () => {
+    const list = await as('admin').get('/workflows');
+    expect(list.status).toBe(200);
+    expect(list.body.map((w: any) => w.name)).toEqual(
+      expect.arrayContaining(['Welcome Letter alla firma della PDA', 'PDA in documentazione incompleta da 7 giorni']),
+    );
+    expect((await as('rep1').get('/workflows')).status).toBe(403);
+    const bad = await as('admin').post('/workflows', {
+      name: 'Errato',
+      module: 'Opportunities',
+      trigger: { type: 'field_change', field: 'nope' },
+      conditions: [{ field: 'boh', op: 'eq', value: 'x' }],
+      actions: [
+        { type: 'update_field', field: 'probability', value: '$nessuno$' },
+        { type: 'send_email', to: 'field:name', subject: 'x' },
+      ],
+    });
+    expect(bad.status).toBe(400);
+    expect(Object.keys(bad.body.errors).sort()).toEqual(['actions.0', 'actions.1.to', 'conditions.0', 'trigger.field']);
+  });
+
+  it('alla firma della PDA prepara la Welcome Letter senza inviarla e crea la chiamata', async () => {
+    const pda = await as('admin').post('/records/SalesOrders', {
+      data: { subject: 'FV 6 kWp', account_id: ids.account, contact_id: ids.contact },
+    });
+    ids.pda = pda.body.id;
+    await flush();
+    expect((await as('admin').get(`/records/SalesOrders/${ids.pda}/emails`)).body.items).toHaveLength(0);
+
+    await as('admin').patch(`/records/SalesOrders/${ids.pda}`, { data: { status: 'Firmata' } });
+    await flush();
+    const emails = (await as('admin').get(`/records/SalesOrders/${ids.pda}/emails`)).body;
+    expect(emails.items).toHaveLength(1);
+    const e = emails.items[0];
+    expect(e).toMatchObject({ to: 'lia@cliente.test', toCustomer: true, status: 'draft' });
+    expect(e.subject).toBe(`Benvenuto! Conferma della proposta ${pda.body.data.order_number}`);
+    expect(e.body).toContain('FV 6 kWp');
+    expect(mailer().sentForTest).toHaveLength(0); // al cliente non parte nulla da solo
+
+    const acts = await as('admin').get(`/records/Activities?filter[sales_order_id]=${ids.pda}`);
+    expect(acts.body.items.map((a: any) => a.label)).toEqual(['Chiamata di benvenuto - Solare Srl']);
+    expect(acts.body.items[0].data).toMatchObject({ activity_type: 'Chiamata', account_id: ids.account, contact_id: ids.contact });
+
+    // l'utente corregge e invia
+    const url = `/records/SalesOrders/${ids.pda}/emails/${e.id}`;
+    expect((await as('admin').patch(url, { to: 'lia@cliente.test', subject: 'Benvenuta!', body: 'Testo' })).body.subject).toBe('Benvenuta!');
+    expect((await as('rep2').post(`${url}/send`, {})).status).toBe(403);
+    const sent = await as('admin').post(`${url}/send`, {});
+    expect(sent.body.status).toBe('sent');
+    expect(mailer().sentForTest).toEqual([{ to: 'lia@cliente.test', subject: 'Benvenuta!', text: 'Testo' }]);
+    expect((await as('admin').post(`${url}/send`, {})).status).toBe(400);
+  });
+
+  it('se lo stato cambia più volte prima dell\'elaborazione conta solo l\'ultimo cambio', async () => {
+    const pda = (await as('admin').post('/records/SalesOrders', { data: { subject: 'Doppio', account_id: ids.account, contact_id: ids.contact } })).body.id;
+    await as('admin').patch(`/records/SalesOrders/${pda}`, { data: { status: 'In verifica' } });
+    await as('admin').patch(`/records/SalesOrders/${pda}`, { data: { status: 'Firmata' } });
+    await flush();
+    expect((await as('admin').get(`/records/SalesOrders/${pda}/emails`)).body.items).toHaveLength(1);
+  });
+
+  it('aggiorna i campi, una sola volta con "la prima volta che le condizioni sono vere", e registra gli errori', async () => {
+    const w1 = await as('admin').post('/workflows', {
+      name: 'Descrizione automatica',
+      module: 'Opportunities',
+      trigger: { type: 'create' },
+      actions: [{ type: 'update_field', field: 'description', value: 'Opportunità di $account_id$ creata il $today$' }],
+    });
+    expect(w1.status).toBe(201);
+    const w2 = await as('admin').post('/workflows', {
+      name: 'Grande affare',
+      module: 'Opportunities',
+      trigger: { type: 'first_match' },
+      conditions: [{ field: 'amount', op: 'gte', value: 10000 }],
+      actions: [{ type: 'update_field', field: 'probability', value: 60 }],
+    });
+    const w3 = await as('admin').post('/workflows', {
+      name: 'Sbagliato',
+      module: 'Opportunities',
+      trigger: { type: 'save' },
+      actions: [{ type: 'update_field', field: 'amount', value: 'tanti' }],
+    });
+    const opp = await as('rep1').post('/records/Opportunities', {
+      data: { name: 'Impianto', account_id: ids.account, amount: 5000, close_date: '2027-03-31', sales_stage: 'Proposta' },
+    });
+    ids.opp = opp.body.id;
+    await flush();
+    let rec = (await as('rep1').get(`/records/Opportunities/${ids.opp}`)).body.data;
+    expect(rec.description).toMatch(/^Opportunità di Solare Srl creata il \d{2}\/\d{2}\/\d{4}$/);
+    expect(rec.probability ?? null).toBeNull();
+
+    await as('rep1').patch(`/records/Opportunities/${ids.opp}`, { data: { amount: 12000 } });
+    await flush();
+    expect((await as('rep1').get(`/records/Opportunities/${ids.opp}`)).body.data.probability).toBe(60);
+    await as('rep1').patch(`/records/Opportunities/${ids.opp}`, { data: { probability: 30 } });
+    await as('rep1').patch(`/records/Opportunities/${ids.opp}`, { data: { amount: 13000 } });
+    await flush();
+    rec = (await as('rep1').get(`/records/Opportunities/${ids.opp}`)).body.data;
+    expect(rec).toMatchObject({ probability: 30, amount: 13000 });
+
+    const runs = (await as('admin').get(`/workflows/${w2.body.id}/runs`)).body;
+    expect(runs).toHaveLength(1);
+    const errs = (await as('admin').get(`/workflows/${w3.body.id}/runs`)).body;
+    expect(errs[0]).toMatchObject({ status: 'error', recordLabel: 'Impianto' });
+    expect(errs[0].message).toContain('amount');
+    for (const w of [w1, w2, w3]) expect((await as('admin').del(`/workflows/${w.body.id}`)).status).toBe(200);
+  });
+
+  it('i workflow a tempo girano una sola volta per scadenza; le email interne partono da sole', async () => {
+    const engine = app.get(WorkflowEngine);
+    await as('admin').patch(`/records/SalesOrders/${ids.pda}`, { data: { status: 'Documentazione incompleta' } });
+    await flush();
+    const wf = (await as('admin').get('/workflows?module=SalesOrders')).body.find((w: any) => w.name.startsWith('PDA in doc'));
+    const runs = async () => (await as('admin').get(`/workflows/${wf.id}/runs`)).body.length;
+    await engine.runScheduled(); // altre scadenze già maturate negli altri test
+    expect(await runs()).toBe(0); // non sono ancora passati 7 giorni
+    const later = new Date(Date.now() + 8 * 86400_000);
+    await engine.runScheduled(later);
+    expect(await runs()).toBe(1);
+    await engine.runScheduled(later);
+    expect(await runs()).toBe(1);
+    const acts = await as('admin').get(`/records/Activities?filter[sales_order_id]=${ids.pda}`);
+    expect(acts.body.items.map((a: any) => a.label)).toContain(
+      `Sollecitare documenti mancanti - ${(await as('admin').get(`/records/SalesOrders/${ids.pda}`)).body.data.order_number}`,
+    );
+    const internal = (await as('admin').get(`/records/SalesOrders/${ids.pda}/emails`)).body.items.find((e: any) => !e.toCustomer);
+    expect(internal).toMatchObject({ to: 'admin@acme.test', status: 'queued' });
+    const before = mailer().sentForTest.length;
+    expect(await engine.sendQueued()).toBe(1);
+    expect(mailer().sentForTest.length).toBe(before + 1);
+    // uscita dalla documentazione incompleta, la PDA non riceve altri promemoria
+    await as('admin').patch(`/records/SalesOrders/${ids.pda}`, { data: { status: 'In verifica' } });
+    await engine.runScheduled(later);
+    expect(await runs()).toBe(1);
+  });
+
+  it('i workflow manuali sono pulsanti sulla scheda per chi può modificare il record', async () => {
+    const opp = (
+      await as('rep1').post('/records/Opportunities', {
+        data: { name: 'Accumulo', account_id: ids.account, contact_id: ids.contact, close_date: '2027-03-31', sales_stage: 'Proposta' },
+      })
+    ).body.id;
+    const buttons = (await as('rep1').get(`/records/Opportunities/${opp}/workflows`)).body;
+    expect(buttons.map((b: any) => b.buttonLabel)).toEqual(['Prepara follow-up']);
+    expect((await as('rep2').post(`/records/Opportunities/${opp}/workflows/${buttons[0].id}/run`, {})).status).toBe(403);
+    const run = await as('rep1').post(`/records/Opportunities/${opp}/workflows/${buttons[0].id}/run`, {});
+    expect(run.status).toBe(201);
+    const emails = (await as('rep1').get(`/records/Opportunities/${opp}/emails`)).body.items;
+    expect(emails).toHaveLength(1);
+    expect(emails[0]).toMatchObject({ to: 'lia@cliente.test', status: 'draft', subject: 'La nostra proposta per Solare Srl' });
+    expect((await as('rep1').post(`/records/Opportunities/${opp}/emails/${emails[0].id}/discard`, {})).status).toBe(201);
+    expect((await as('rep1').get(`/records/Opportunities/${opp}/emails`)).body.items).toHaveLength(0);
   });
 });

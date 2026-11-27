@@ -21,6 +21,8 @@ export interface SecurityContext {
   readonlyFields: Set<string>;
   /** l'utente stesso + gli utenti dei ruoli subordinati */
   visibleOwnerIds: string[];
+  /** id del workflow che sta eseguendo le azioni: gli eventi che genera non riattivano i workflow */
+  viaWorkflow?: string;
 }
 
 const NONE: ModulePermission = { view: false, create: false, edit: false, delete: false };

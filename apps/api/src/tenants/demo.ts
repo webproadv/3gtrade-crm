@@ -297,6 +297,42 @@ export async function seedDemo(pool: Pool, opts: DemoOptions = {}): Promise<bool
          l.amounts.net, l.amounts.vat, l.amounts.total],
       );
     }
+    await client.query(
+      `INSERT INTO record_counters (tenant_id, module, year, last_value) VALUES ($1, 'Leads', $2, 2)`,
+      [t.tenantId, year],
+    );
+    await rec('Leads', rep1, {
+      lead_number: formatDocNumber('LEA', year, 1),
+      first_name: 'Giulia',
+      last_name: 'Esempio',
+      company: 'Agriturismo Il Poggio (esempio)',
+      customer_type: 'B2B',
+      email: 'info@agriturismo-esempio.test',
+      lead_status: 'Appuntamento fissato',
+      lead_source: 'Sito web',
+      product_interest: ['Fotovoltaico', 'Accumulo'],
+      first_contact_date: new Date().toISOString().slice(0, 10),
+      first_contact_outcome: 'Appuntamento fissato',
+      contact_mode: 'Telefono',
+      installation_type: 'Tetto inclinato',
+      budget: 30000,
+      probability: 'Media',
+      annual_kwh: 42000,
+      appointment_outcome: 'Fissato',
+      lead_city: 'Siena',
+      lead_province: 'SI',
+    });
+    await rec('Leads', rep2, {
+      lead_number: formatDocNumber('LEA', year, 2),
+      first_name: 'Paolo',
+      last_name: 'Prova',
+      customer_type: 'B2C',
+      lead_status: 'Nuovo',
+      lead_source: 'Call center',
+      product_interest: ['Pompa di calore'],
+      lead_city: 'Bologna',
+      lead_province: 'BO',
+    });
     await client.query('COMMIT');
   } catch (e) {
     await client.query('ROLLBACK');

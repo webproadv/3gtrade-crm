@@ -15,6 +15,9 @@ import { OutboxWorker } from './events/outbox.worker';
 import { MetadataController } from './metadata/metadata.controller';
 import { MetadataService } from './metadata/metadata.service';
 import { CalendarController } from './records/calendar.controller';
+import { CommentsController } from './records/comments.controller';
+import { LeadConversionService } from './records/lead-conversion.service';
+import { LeadsController } from './records/leads.controller';
 import { LinesController } from './records/lines.controller';
 import { LinesService } from './records/lines.service';
 import { RecordsController } from './records/records.controller';
@@ -23,6 +26,13 @@ import { ReportsController } from './reports/reports.controller';
 import { ReportsService } from './reports/reports.service';
 import { ScopeService } from './security/scope.service';
 import { SecurityService } from './security/security.service';
+import { ListViewsController } from './views/list-views.controller';
+import { ListViewsService } from './views/list-views.service';
+import { MailerService } from './workflows/mailer.service';
+import { WorkflowEngine } from './workflows/workflow-engine';
+import { WorkflowHandler, WorkflowScheduler } from './workflows/workflow-runtime';
+import { RecordWorkflowsController, WorkflowsController } from './workflows/workflows.controller';
+import { WorkflowsService } from './workflows/workflows.service';
 
 @Module({})
 export class AppModule {
@@ -41,7 +51,12 @@ export class AppModule {
         RecordsController,
         CalendarController,
         LinesController,
+        LeadsController,
+        CommentsController,
         ReportsController,
+        ListViewsController,
+        WorkflowsController,
+        RecordWorkflowsController,
         AdminController,
         UsersController,
       ],
@@ -52,10 +67,21 @@ export class AppModule {
         MetadataService,
         RecordsService,
         LinesService,
+        LeadConversionService,
         ReportsService,
+        ListViewsService,
         AdminService,
+        MailerService,
+        WorkflowsService,
+        WorkflowEngine,
+        WorkflowScheduler,
         LoggingHandler,
-        { provide: EVENT_HANDLERS, useFactory: (log: LoggingHandler) => [log], inject: [LoggingHandler] },
+        WorkflowHandler,
+        {
+          provide: EVENT_HANDLERS,
+          useFactory: (log: LoggingHandler, wf: WorkflowHandler) => [log, wf],
+          inject: [LoggingHandler, WorkflowHandler],
+        },
         OutboxWorker,
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_FILTER, useClass: ErrorsFilter },

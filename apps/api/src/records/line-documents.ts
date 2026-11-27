@@ -1,20 +1,14 @@
 /**
- * Documenti con righe (PDA/ordini; in futuro preventivi e fatture): numerazione automatica
- * e campi dei totali calcolati dalle righe.
+ * Documenti con righe (PDA/ordini; in futuro preventivi e fatture): campi dei totali calcolati
+ * dalle righe. La numerazione automatica è in auto-numbers.ts.
  */
 export interface LineDocument {
-  /** campo con il numero progressivo, es. 2026-00001 */
-  numberField: string;
-  /** prefisso facoltativo del numero, es. "PDA" → PDA-2026-00001 */
-  prefix: string;
   /** adjustment: arrotondamento modificabile a mano, sommato al totale */
   totals: { net: string; vat: string; adjustment: string; total: string };
 }
 
 export const LINE_DOCUMENTS: Record<string, LineDocument> = {
   SalesOrders: {
-    numberField: 'order_number',
-    prefix: '',
     totals: { net: 'subtotal', vat: 'vat_total', adjustment: 'adjustment', total: 'grand_total' },
   },
 };

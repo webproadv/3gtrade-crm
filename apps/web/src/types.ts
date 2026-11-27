@@ -20,7 +20,7 @@ export interface Field {
   isCustom: boolean;
   inList: boolean;
   sortOrder: number;
-  options: { values?: string[]; module?: string; maxLength?: number };
+  options: { values?: string[]; module?: string; maxLength?: number; computed?: boolean };
   editable?: boolean;
 }
 
@@ -145,4 +145,89 @@ export interface DocLine {
   net?: number;
   vat?: number;
   total?: number;
+}
+
+export interface ViewConfig {
+  columns: string[];
+  filters: ReportConfig['filters'];
+  sort?: { field: string; dir: 'asc' | 'desc' } | null;
+}
+
+export interface ListViewDef {
+  id: string;
+  name: string;
+  module: string;
+  shared: boolean;
+  ownerId: string;
+  ownerName?: string;
+  config: ViewConfig;
+  canEdit: boolean;
+}
+
+export interface ViewPage {
+  columns: { key: string; label: string; type: FieldType }[];
+  items: CrmRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hidden: string[];
+  refs: Refs;
+}
+
+export type WorkflowTrigger =
+  | { type: 'create' }
+  | { type: 'save' }
+  | { type: 'first_match' }
+  | { type: 'manual'; buttonLabel: string }
+  | { type: 'field_change'; field: string }
+  | { type: 'scheduled'; from: string; days: number };
+
+export type WorkflowAction =
+  | { type: 'update_field'; field: string; value: string | number | boolean | null }
+  | {
+      type: 'create_activity';
+      subject: string;
+      activityType: string;
+      dueDays: number;
+      assignTo: string;
+      description: string;
+    }
+  | { type: 'send_email'; to: string; subject: string; body: string };
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description: string;
+  module: string;
+  active: boolean;
+  trigger: WorkflowTrigger;
+  conditions: ViewConfig['filters'];
+  actions: WorkflowAction[];
+  lastRunAt?: string | null;
+  runs?: number;
+  errors?: number;
+}
+
+export interface WorkflowRun {
+  id: number;
+  recordId: string;
+  recordLabel: string;
+  module: string;
+  status: 'ok' | 'error';
+  message: string;
+  createdAt: string;
+}
+
+export interface RecordEmail {
+  id: string;
+  to: string;
+  subject: string;
+  body: string;
+  toCustomer: boolean;
+  status: 'draft' | 'queued' | 'sent' | 'failed';
+  error: string | null;
+  workflowName: string | null;
+  createdAt: string;
+  sentAt: string | null;
+  sentByName: string | null;
 }

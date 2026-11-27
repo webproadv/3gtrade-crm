@@ -24,6 +24,7 @@ export function Layout() {
               <NavLink to="/admin/modules">Moduli e campi</NavLink>
               <NavLink to="/admin/users">Utenti</NavLink>
               <NavLink to="/admin/roles">Ruoli e profili</NavLink>
+              <NavLink to="/admin/workflows">Workflow</NavLink>
             </>
           )}
         </nav>
