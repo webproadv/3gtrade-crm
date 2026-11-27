@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { groupByBlock } from '../components/blocks';
+import { ConvertLead } from '../components/ConvertLead';
 import { FieldValue } from '../components/FieldValue';
 import { formatDateTime } from '../components/format';
 import { LinesEditor } from '../components/LinesEditor';
@@ -35,9 +36,11 @@ export function RecordView() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [tab, setTab] = useState<'details' | 'history'>('details');
   const [error, setError] = useState('');
+  const [converting, setConverting] = useState(false);
 
   useEffect(() => {
     setRec(null);
+    setConverting(false);
     setError('');
     api<CrmRecord>(`/records/${name}/${id}`).then(setRec).catch((e) => setError(e.message));
     api<Related[]>(`/records/${name}/${id}/related`).then(setRelated).catch(() => setRelated([]));
@@ -86,6 +89,11 @@ export function RecordView() {
               Segna come completata
             </button>
           )}
+          {name === 'Leads' && rec.permissions?.edit && !rec.data.converted_at && !converting && (
+            <button className="primary" onClick={() => setConverting(true)}>
+              Converti
+            </button>
+          )}
           {mod.hasLines && (
             <button onClick={() => window.open(`/m/${name}/${id}/print`, '_blank')}>Stampa</button>
           )}
@@ -113,6 +121,14 @@ export function RecordView() {
           Storico ({history.length})
         </button>
       </div>
+
+      {converting && (
+        <ConvertLead
+          lead={rec}
+          onCancel={() => setConverting(false)}
+          onDone={(r) => nav(r.opportunityId ? `/m/Opportunities/${r.opportunityId}` : `/m/Accounts/${r.accountId}`)}
+        />
+      )}
 
       {tab === 'details' && (
         <>
@@ -144,7 +160,8 @@ export function RecordView() {
                   <h2>
                     {r.label} <span className="muted">({r.total})</span>
                   </h2>
-                  {relMod?.permissions?.create && (
+                  {/* i collegamenti calcolati dal sistema (es. lead convertito) non si creano da qui */}
+                  {relMod?.permissions?.create && relMod.fields.find((f) => f.name === r.field)?.editable !== false && (
                     <button onClick={() => nav(`/m/${r.module}/new?${r.field}=${id}`)}>Aggiungi</button>
                   )}
                 </div>

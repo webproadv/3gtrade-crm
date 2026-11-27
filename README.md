@@ -27,6 +27,11 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
   e **moduli personalizzati** creati dall'amministrazione.
 - **Moduli standard**: Aziende, Contatti, Opportunità, Attività, Prodotti e servizi e PDA, con relazioni e
   liste correlate.
+- **Lead e conversione** come in vtenext: numero automatico (`LEA-2026-00001`), primo contatto, qualificazione
+  (bollette, consumi, budget, tipo di installazione), esito dell'appuntamento e dati dell'azienda. Il pulsante
+  **Converti** crea l'azienda (per i privati prende il nome della persona) oppure collega un'azienda esistente,
+  crea il contatto e, se richiesto, l'opportunità "Cliente - Prodotto". Il lead resta come storico con lo stato
+  "Convertito" e i collegamenti ai record creati; le sue attività passano al nuovo cliente.
 - **Attività e calendario**: chiamate, appuntamenti, compiti ed email collegati ad aziende, contatti e
   opportunità; calendario mensile e settimanale filtrabile per utente; "Le mie attività" in panoramica
   (in ritardo, oggi, prossimi giorni) con completamento in un clic.

@@ -10,7 +10,8 @@ import {
   resolveDefault,
   validateRecordData,
 } from '../metadata/field-types';
-import { LINE_DOCUMENTS, LineDocument, formatDocNumber, grandTotal } from './line-documents';
+import { AUTO_NUMBERS, AutoNumber } from './auto-numbers';
+import { LINE_DOCUMENTS, formatDocNumber, grandTotal } from './line-documents';
 import { checkModuleRules } from './module-rules';
 import { MetadataService, ModuleDef } from '../metadata/metadata.service';
 import { SecurityContext, can, canAccessRecord } from '../security/security-context';
@@ -268,9 +269,10 @@ export class RecordsService {
       const [v, err] = normalizeValue(f, resolveDefault(f.options.default));
       if (!err && v !== null) data[f.name] = v;
     }
+    const numbering = AUTO_NUMBERS[module];
+    if (numbering) data[numbering.field] = await this.nextNumber(tx, sec, module, numbering);
     const doc = LINE_DOCUMENTS[module];
     if (doc) {
-      data[doc.numberField] = await this.nextNumber(tx, sec, module, doc);
       data[doc.totals.net] = 0;
       data[doc.totals.vat] = 0;
       data[doc.totals.total] = grandTotal(0, 0, data[doc.totals.adjustment]);
@@ -292,8 +294,27 @@ export class RecordsService {
     return this.get(tx, sec, module, row.id);
   }
 
-  /** Prossimo numero progressivo del documento per l'anno in corso (contatore per azienda, modulo e anno). */
-  private async nextNumber(tx: Tx, sec: SecurityContext, module: string, doc: LineDocument) {
+  /**
+   * Crea un record partendo da dati copiati da un altro record (es. conversione del lead):
+   * tiene solo i campi che l'utente può valorizzare nel modulo di destinazione e i valori non vuoti.
+   */
+  async createFrom(
+    tx: Tx,
+    sec: SecurityContext,
+    module: string,
+    values: Record<string, unknown>,
+    ownerId?: string,
+  ) {
+    const { fields } = await this.context(tx, sec, module, 'create');
+    const editable = this.editableSet(fields);
+    const data = Object.fromEntries(
+      Object.entries(values).filter(([k, v]) => editable.has(k) && v !== undefined && v !== null && v !== ''),
+    );
+    return this.create(tx, sec, module, { data, ownerId });
+  }
+
+  /** Prossimo numero progressivo del record per l'anno in corso (contatore per azienda, modulo e anno). */
+  private async nextNumber(tx: Tx, sec: SecurityContext, module: string, numbering: AutoNumber) {
     const year = new Date().getFullYear();
     const r = await tx.query(
       `INSERT INTO record_counters (tenant_id, module, year, last_value) VALUES ($1, $2, $3, 1)
@@ -301,7 +322,7 @@ export class RecordsService {
        RETURNING last_value`,
       [sec.tenantId, module, year],
     );
-    return formatDocNumber(doc.prefix, year, r.rows[0].last_value);
+    return formatDocNumber(numbering.prefix, year, r.rows[0].last_value);
   }
 
   /** Record modificabile dall'utente (permesso sul modulo e visibilità del record), per le righe. */

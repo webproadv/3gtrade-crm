@@ -208,7 +208,13 @@ describe('record e permessi', () => {
 
     const rel = await as('rep1').get(`/records/Accounts/${accountId}/related`);
     const byModule = Object.fromEntries(rel.body.map((r: any) => [`${r.module}.${r.field}`, r.total]));
-    expect(byModule).toEqual({ 'Contacts.account_id': 1, 'Opportunities.account_id': 1, 'Activities.account_id': 0, 'SalesOrders.account_id': 0 });
+    expect(byModule).toEqual({
+      'Leads.converted_account_id': 0,
+      'Contacts.account_id': 1,
+      'Opportunities.account_id': 1,
+      'Activities.account_id': 0,
+      'SalesOrders.account_id': 0,
+    });
 
     const upd = await as('rep1').patch(`/records/Opportunities/${opp.body.id}`, { data: { sales_stage: 'Chiusa vinta' } });
     expect(upd.body.data.sales_stage).toBe('Chiusa vinta');
@@ -673,5 +679,96 @@ describe('PDA e prodotti', () => {
       config: { columns: ['order_number', 'grand_total'], groupBy: { field: 'status' }, totals: [{ field: 'grand_total', fn: 'sum' }] },
     });
     expect(r.body.totals).toEqual({ count: 2, 'sum:grand_total': 68.6 });
+  });
+});
+
+describe('lead e conversione', () => {
+  const ids: Record<string, string> = {};
+
+  it('numera i lead e propone lo stato iniziale', async () => {
+    const a = await as('rep1').post('/records/Leads', {
+      data: {
+        first_name: 'Mario',
+        last_name: 'Verdi',
+        company: 'Hotel Sole',
+        customer_type: 'B2B',
+        email: 'info@hotelsole.test',
+        phone: '0541000000',
+        lead_source: 'Referenza',
+        product_interest: ['Fotovoltaico', 'Accumulo'],
+        budget: 25000,
+        vat_number: '01234567890',
+        lead_city: 'Rimini',
+        appointment_notes: 'Tetto piano 400 mq',
+      },
+    });
+    expect(a.status).toBe(201);
+    expect(a.body.data.lead_number).toMatch(/^LEA-\d{4}-00001$/);
+    expect(a.body.data.lead_status).toBe('Nuovo');
+    ids.lead = a.body.id;
+    const b = await as('rep1').post('/records/Leads', { data: { last_name: 'Neri' } });
+    expect(b.body.data.lead_number).toMatch(/^LEA-\d{4}-00002$/);
+    ids.privateLead = b.body.id;
+    const forced = await as('rep1').patch(`/records/Leads/${ids.lead}`, { data: { lead_number: 'X', converted_at: '2026-01-01T00:00:00Z' } });
+    expect(forced.status).toBe(400);
+    const act = await as('rep1').post('/records/Activities', {
+      data: { subject: 'Richiamare', activity_type: 'Chiamata', start: '2027-01-10T09:00:00Z', lead_id: ids.lead },
+    });
+    expect(act.status).toBe(201);
+    ids.activity = act.body.id;
+  });
+
+  it('converte il lead in azienda, contatto e opportunità', async () => {
+    expect((await as('rep2').post(`/leads/${ids.lead}/convert`, {})).status).toBe(403);
+    const r = await as('rep1').post(`/leads/${ids.lead}/convert`, { opportunity: { closeDate: '2027-03-31' } });
+    expect(r.status).toBe(201);
+    const { accountId, contactId, opportunityId } = r.body;
+
+    const acc = await as('rep1').get(`/records/Accounts/${accountId}`);
+    expect(acc.body.data).toMatchObject({
+      name: 'Hotel Sole', vat_number: '01234567890', billing_city: 'Rimini', account_type: 'Prospect', email: 'info@hotelsole.test',
+    });
+    const con = await as('rep1').get(`/records/Contacts/${contactId}`);
+    expect(con.body.label).toBe('Mario Verdi');
+    expect(con.body.data.account_id).toBe(accountId);
+    const opp = await as('rep1').get(`/records/Opportunities/${opportunityId}`);
+    expect(opp.body.data).toMatchObject({
+      name: 'Hotel Sole - Fotovoltaico + Accumulo', account_id: accountId, contact_id: contactId, amount: 25000,
+      close_date: '2027-03-31', sales_stage: 'Qualificazione', lead_source: 'Passaparola', description: 'Tetto piano 400 mq',
+    });
+
+    const lead = await as('rep1').get(`/records/Leads/${ids.lead}`);
+    expect(lead.body.data).toMatchObject({
+      lead_status: 'Convertito', converted_account_id: accountId, converted_contact_id: contactId, converted_opportunity_id: opportunityId,
+    });
+    expect(lead.body.data.converted_at).toBeTruthy();
+    const act = await as('rep1').get(`/records/Activities/${ids.activity}`);
+    expect(act.body.data).toMatchObject({ lead_id: ids.lead, account_id: accountId, contact_id: contactId, opportunity_id: opportunityId });
+
+    // l'azienda mostra il lead di provenienza tra i collegati
+    const rel = await as('rep1').get(`/records/Accounts/${accountId}/related`);
+    expect(rel.body.find((x: any) => x.module === 'Leads').total).toBe(1);
+
+    const again = await as('rep1').post(`/leads/${ids.lead}/convert`, {});
+    expect(again.status).toBe(400);
+    ids.account = accountId;
+  });
+
+  it('cliente privato senza opportunità o collegato a un\'azienda esistente', async () => {
+    const r = await as('rep1').post(`/leads/${ids.privateLead}/convert`, { createOpportunity: false });
+    expect(r.status).toBe(201);
+    expect(r.body.opportunityId).toBeNull();
+    expect((await as('rep1').get(`/records/Accounts/${r.body.accountId}`)).body.label).toBe('Neri');
+
+    const lead = (await as('rep1').post('/records/Leads', { data: { last_name: 'Gialli', company: 'Hotel Sole' } })).body.id;
+    const linked = await as('rep1').post(`/leads/${lead}/convert`, { accountId: ids.account, createOpportunity: false });
+    expect(linked.status).toBe(201);
+    expect(linked.body.accountId).toBe(ids.account);
+    const contacts = await as('rep1').get(`/records/Accounts/${ids.account}/related`);
+    expect(contacts.body.find((x: any) => x.module === 'Contacts').total).toBe(2);
+
+    // azienda di un altro tenant o inesistente
+    const bad = await as('rep1').post(`/leads/${lead}/convert`, { accountId: '00000000-0000-0000-0000-000000000000' });
+    expect([400, 404]).toContain(bad.status);
   });
 });

@@ -38,8 +38,174 @@ const address = (prefix: string, block: string): StandardField[] => [
   { name: `${prefix}_country`, label: 'Nazione', type: 'text', block },
 ];
 
+const PRODUCT_CATEGORIES = ['Fotovoltaico', 'Accumulo', 'Pompa di calore', 'Climatizzazione', 'Infissi', 'Luce', 'Gas', 'Altro'];
+const INDUSTRIES = ['Commercio', 'Manifattura', 'Servizi', 'Edilizia', 'Energia', 'Tecnologia', 'Trasporti', 'Pubblica amministrazione', 'Altro'];
+
+/** Stato del lead dopo la conversione in cliente: impostato dal sistema. */
+export const LEAD_CONVERTED = 'Convertito';
+
+const LEAD = {
+  info: 'Informazioni lead',
+  contact: 'Primo contatto',
+  qualification: 'Qualificazione',
+  appointment: 'Appuntamento',
+  company: 'Dati azienda',
+  conversion: 'Conversione',
+};
+
+/**
+ * Lead: il contatto commerciale prima che diventi cliente, come in vtenext.
+ * Raccoglie primo contatto, qualificazione ed esito dell'appuntamento; con la conversione
+ * genera Azienda (o cliente privato), Contatto ed eventualmente Opportunità.
+ */
+const LEADS: StandardModule = {
+  name: 'Leads',
+  label: 'Lead',
+  labelSingular: 'Lead',
+  icon: 'user-plus',
+  labelFields: ['first_name', 'last_name'],
+  sharing: 'private',
+  inheritPermissionsFrom: 'Contacts',
+  fields: [
+    { name: 'lead_number', label: 'Numero lead', type: 'text', block: LEAD.info, inList: true, options: { computed: true } },
+    { name: 'first_name', label: 'Nome', type: 'text', block: LEAD.info, inList: true },
+    { name: 'last_name', label: 'Cognome', type: 'text', block: LEAD.info, required: true, inList: true },
+    { name: 'company', label: 'Società', type: 'text', block: LEAD.info, inList: true },
+    {
+      name: 'customer_type',
+      label: 'Tipologia cliente',
+      type: 'picklist',
+      block: LEAD.info,
+      options: { values: ['B2C', 'B2B'], default: 'B2C' },
+    },
+    { name: 'email', label: 'Email', type: 'email', block: LEAD.info, inList: true },
+    { name: 'phone', label: 'Telefono', type: 'phone', block: LEAD.info, inList: true },
+    { name: 'mobile', label: 'Cellulare', type: 'phone', block: LEAD.info },
+    {
+      name: 'lead_status',
+      label: 'Stato lead',
+      type: 'picklist',
+      block: LEAD.info,
+      required: true,
+      inList: true,
+      options: {
+        values: ['Nuovo', 'Da contattare', 'Contattato', 'Appuntamento fissato', 'Qualificato', 'Non qualificato', LEAD_CONVERTED],
+        default: 'Nuovo',
+      },
+    },
+    {
+      name: 'lead_source',
+      label: 'Provenienza',
+      type: 'picklist',
+      block: LEAD.info,
+      options: { values: ['Call center', 'Sito web', 'Social', 'Referenza', 'Fiera', 'Campagna', 'Agente', 'Partner', 'Altro'] },
+    },
+    {
+      name: 'product_interest',
+      label: 'Prodotto di interesse',
+      type: 'multipicklist',
+      block: LEAD.info,
+      options: { values: PRODUCT_CATEGORIES },
+    },
+    { name: 'lead_score', label: 'Leadscore', type: 'integer', block: LEAD.info },
+    { name: 'newsletter', label: 'Riceve newsletter', type: 'boolean', block: LEAD.info },
+    { name: 'marketing_consent_revoked', label: 'Revoca consenso marketing', type: 'boolean', block: LEAD.info },
+
+    { name: 'first_contact_date', label: 'Data primo contatto', type: 'date', block: LEAD.contact },
+    {
+      name: 'first_contact_outcome',
+      label: 'Esito primo contatto',
+      type: 'picklist',
+      block: LEAD.contact,
+      options: { values: ['Da ricontattare', 'Appuntamento fissato', 'Non interessato', 'Non raggiungibile', 'Numero errato'] },
+    },
+    {
+      name: 'contact_mode',
+      label: 'Modalità di contatto',
+      type: 'picklist',
+      block: LEAD.contact,
+      options: { values: ['Telefono', 'Email', 'WhatsApp', 'Di persona'] },
+    },
+    { name: 'decision_maker_differs', label: 'Decisore diverso dal referente', type: 'boolean', block: LEAD.contact },
+    { name: 'contact_notes', label: 'Note sul contatto', type: 'textarea', block: LEAD.contact },
+
+    { name: 'provides_bills', label: 'Il cliente fornisce le bollette', type: 'boolean', block: LEAD.qualification },
+    { name: 'existing_system', label: 'Impianto già presente', type: 'boolean', block: LEAD.qualification },
+    {
+      name: 'installation_type',
+      label: 'Tipologia installazione',
+      type: 'picklist',
+      block: LEAD.qualification,
+      options: { values: ['Tetto inclinato', 'Tetto piano', 'A terra', 'Pensilina', 'Altro'] },
+    },
+    { name: 'budget', label: 'Budget indicativo', type: 'currency', block: LEAD.qualification },
+    {
+      name: 'decision_time',
+      label: 'Tempi di decisione',
+      type: 'picklist',
+      block: LEAD.qualification,
+      options: { values: ['Subito', 'Entro 3 mesi', 'Entro 6 mesi', 'Oltre 6 mesi'] },
+    },
+    {
+      name: 'probability',
+      label: 'Probabilità percepita',
+      type: 'picklist',
+      block: LEAD.qualification,
+      options: { values: ['Alta', 'Media', 'Bassa'] },
+    },
+    { name: 'annual_kwh', label: 'Consumo annuo luce (kWh)', type: 'number', block: LEAD.qualification },
+    { name: 'annual_smc', label: 'Consumo annuo gas (Smc)', type: 'number', block: LEAD.qualification },
+
+    { name: 'appointment_date', label: 'Data appuntamento', type: 'datetime', block: LEAD.appointment },
+    {
+      name: 'appointment_outcome',
+      label: 'Esito appuntamento',
+      type: 'picklist',
+      block: LEAD.appointment,
+      inList: true,
+      options: { values: ['Da fissare', 'Fissato', 'Positivo', 'Negativo', 'Da richiamare', 'Non lavorabile'] },
+    },
+    { name: 'outcome_reason', label: 'Motivazione', type: 'text', block: LEAD.appointment },
+    { name: 'appointment_notes', label: 'Note esito appuntamento', type: 'textarea', block: LEAD.appointment },
+
+    { name: 'vat_number', label: 'Partita IVA', type: 'text', block: LEAD.company },
+    { name: 'tax_code', label: 'Codice fiscale', type: 'text', block: LEAD.company },
+    { name: 'industry', label: 'Settore', type: 'picklist', block: LEAD.company, options: { values: INDUSTRIES } },
+    { name: 'website', label: 'Sito web', type: 'url', block: LEAD.company },
+    { name: 'employees', label: 'Dipendenti', type: 'integer', block: LEAD.company },
+    { name: 'annual_revenue', label: 'Fatturato annuo', type: 'currency', block: LEAD.company },
+
+    ...address('lead', 'Indirizzo'),
+    { name: 'description', label: 'Descrizione', type: 'textarea', block: 'Descrizione' },
+
+    { name: 'converted_at', label: 'Convertito il', type: 'datetime', block: LEAD.conversion, options: { computed: true } },
+    {
+      name: 'converted_account_id',
+      label: 'Azienda / cliente',
+      type: 'relation',
+      block: LEAD.conversion,
+      options: { module: 'Accounts', computed: true },
+    },
+    {
+      name: 'converted_contact_id',
+      label: 'Contatto',
+      type: 'relation',
+      block: LEAD.conversion,
+      options: { module: 'Contacts', computed: true },
+    },
+    {
+      name: 'converted_opportunity_id',
+      label: 'Opportunità',
+      type: 'relation',
+      block: LEAD.conversion,
+      options: { module: 'Opportunities', computed: true },
+    },
+  ],
+};
+
 /** Moduli standard creati per ogni nuovo tenant. */
 export const STANDARD_MODULES: StandardModule[] = [
+  LEADS,
   {
     name: 'Accounts',
     label: 'Aziende',
@@ -62,9 +228,7 @@ export const STANDARD_MODULES: StandardModule[] = [
         label: 'Settore',
         type: 'picklist',
         block: 'Informazioni azienda',
-        options: {
-          values: ['Commercio', 'Manifattura', 'Servizi', 'Edilizia', 'Energia', 'Tecnologia', 'Trasporti', 'Pubblica amministrazione', 'Altro'],
-        },
+        options: { values: INDUSTRIES },
       },
       { name: 'vat_number', label: 'Partita IVA', type: 'text', block: 'Informazioni azienda' },
       { name: 'tax_code', label: 'Codice fiscale', type: 'text', block: 'Informazioni azienda' },
@@ -202,6 +366,7 @@ export const STANDARD_MODULES: StandardModule[] = [
       { name: 'end', label: 'Fine', type: 'datetime', block: 'Attività' },
       { name: 'all_day', label: 'Tutto il giorno', type: 'boolean', block: 'Attività' },
       { name: 'location', label: 'Luogo', type: 'text', block: 'Attività' },
+      { name: 'lead_id', label: 'Lead', type: 'relation', block: 'Collegamenti', options: { module: 'Leads' } },
       { name: 'account_id', label: 'Azienda', type: 'relation', block: 'Collegamenti', inList: true, options: { module: 'Accounts' } },
       { name: 'contact_id', label: 'Contatto', type: 'relation', block: 'Collegamenti', options: { module: 'Contacts' } },
       {
@@ -302,9 +467,7 @@ export const STANDARD_MODULES: StandardModule[] = [
         type: 'picklist',
         block: 'Informazioni PDA',
         inList: true,
-        options: {
-          values: ['Fotovoltaico', 'Accumulo', 'Pompa di calore', 'Climatizzazione', 'Infissi', 'Luce', 'Gas', 'Altro'],
-        },
+        options: { values: PRODUCT_CATEGORIES },
       },
       {
         name: 'source',
