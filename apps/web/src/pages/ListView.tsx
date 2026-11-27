@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { api } from '../api';
+import { BOARD_FIELDS, Board } from '../components/Board';
 import { FieldValue } from '../components/FieldValue';
 import { formatDateTime } from '../components/format';
 import { ViewEditor } from '../components/ViewEditor';
@@ -31,24 +32,35 @@ export function ListView() {
   const sort = sp.get('sort') ?? '';
   const dir = (sp.get('dir') as 'asc' | 'desc') ?? 'asc';
   const page = Number(sp.get('page') ?? 1);
+  const boardAvailable =
+    !!BOARD_FIELDS[name] && !!module(name)?.fields.some((f) => f.name === BOARD_FIELDS[name].field);
+  const mode = boardAvailable && sp.get('mode') === 'board' ? 'board' : 'list';
   const view = views.find((v) => v.id === viewId) ?? null;
 
   // vista "Tutti": i campi da mostrare in lista più l'assegnatario
   const defaultConfig = useMemo<ViewConfig>(
-    () => ({ columns: [...(mod?.fields.filter((f) => f.inList).map((f) => f.name) ?? []), 'ownerId'], filters: [], sort: null }),
+    () => ({
+      columns: [...(mod?.fields.filter((f) => f.inList).map((f) => f.name) ?? []), 'ownerId'],
+      filters: [],
+      sort: null,
+    }),
     [mod],
   );
 
   useEffect(() => {
     setEditing(null);
-    api<ListViewDef[]>(`/list-views?module=${encodeURIComponent(name)}`).then(setViews).catch(() => setViews([]));
+    api<ListViewDef[]>(`/list-views?module=${encodeURIComponent(name)}`)
+      .then(setViews)
+      .catch(() => setViews([]));
   }, [name]);
   useEffect(() => {
-    api('/users').then(setUsers).catch(() => setUsers([]));
+    api('/users')
+      .then(setUsers)
+      .catch(() => setUsers([]));
   }, []);
 
   useEffect(() => {
-    if (!mod) return;
+    if (!mod || mode === 'board') return;
     setError('');
     api<ViewPage>('/list-views/query', {
       method: 'POST',
@@ -64,7 +76,7 @@ export function ListView() {
     })
       .then(setData)
       .catch((e) => setError(e.message));
-  }, [name, mod, viewId, owner, q, sort, dir, page, defaultConfig, reload]);
+  }, [name, mod, mode, viewId, owner, q, sort, dir, page, defaultConfig, reload]);
 
   useEffect(() => setSearch(q), [q, name]);
 
@@ -74,7 +86,12 @@ export function ListView() {
     for (const [k, v] of Object.entries(patch)) v ? next.set(k, v) : next.delete(k);
     setSp(next);
   };
-  const toggleSort = (field: string) => update({ sort: field, dir: sort === field && dir === 'asc' ? 'desc' : 'asc', page: '' });
+  const toggleSort = (field: string) =>
+    update({
+      sort: field,
+      dir: sort === field && dir === 'asc' ? 'desc' : 'asc',
+      page: '',
+    });
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
   const fieldOf = (key: string) => mod.fields.find((f) => f.name === key);
   const mine = views.filter((v) => !v.shared);
@@ -84,6 +101,16 @@ export function ListView() {
     <div>
       <div className="page-head">
         <h1>{mod.label}</h1>
+        {boardAvailable && (
+          <span className="view-switch">
+            <button className={mode === 'list' ? 'active' : ''} onClick={() => update({ mode: '' })}>
+              Lista
+            </button>
+            <button className={mode === 'board' ? 'active' : ''} onClick={() => update({ mode: 'board', page: '' })}>
+              Colonne
+            </button>
+          </span>
+        )}
         {mod.permissions?.create && (
           <button className="primary" onClick={() => nav(`/m/${name}/new`)}>
             Nuovo {mod.labelSingular.toLowerCase()}
@@ -145,9 +172,13 @@ export function ListView() {
               ))}
           </select>
         </label>
-        <input placeholder={`Cerca in ${mod.label.toLowerCase()}…`} value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input
+          placeholder={`Cerca in ${mod.label.toLowerCase()}…`}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
         <button>Cerca</button>
-        {data && <span className="muted">{data.total} risultati</span>}
+        {data && mode === 'list' && <span className="muted">{data.total} risultati</span>}
       </form>
 
       {editing && (
@@ -172,61 +203,64 @@ export function ListView() {
         />
       )}
 
-      {error && <div className="error">{error}</div>}
-      {data && data.hidden.length > 0 && (
+      {mode === 'board' && <Board mod={mod} config={view?.config ?? defaultConfig} owner={owner} q={q} />}
+      {mode === 'list' && error && <div className="error">{error}</div>}
+      {mode === 'list' && data && data.hidden.length > 0 && (
         <p className="muted small">Campi della vista che non puoi vedere, ignorati: {data.hidden.join(', ')}</p>
       )}
-      <div className="table-wrap">
-        <table className="table">
-          <thead>
-            <tr>
-              {data?.columns.map((c) => (
-                <th key={c.key} onClick={() => toggleSort(c.key)} className="sortable">
-                  {c.label} {sort === c.key ? (dir === 'asc' ? '▲' : '▼') : ''}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {data?.items.map((r) => (
-              <tr key={r.id} onClick={() => nav(`/m/${name}/${r.id}`)} className="clickable">
-                {data.columns.map((c, i) => {
-                  const f = fieldOf(c.key);
-                  const cell =
-                    c.key === 'ownerId' ? (
-                      data.refs.users[r.ownerId]
-                    ) : c.key === 'createdAt' || c.key === 'updatedAt' ? (
-                      formatDateTime(c.key === 'createdAt' ? r.createdAt : r.updatedAt)
-                    ) : f ? (
-                      <FieldValue field={f} value={r.data[c.key]} refs={data.refs} />
-                    ) : null;
-                  return (
-                    <td key={c.key}>
-                      {i === 0 ? (
-                        <Link to={`/m/${name}/${r.id}`} onClick={(e) => e.stopPropagation()}>
-                          {r.data[c.key] != null && f && ['text', 'email', 'phone'].includes(f.type)
-                            ? String(r.data[c.key])
-                            : r.label || '(senza nome)'}
-                        </Link>
-                      ) : (
-                        cell
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
-            {data?.items.length === 0 && (
+      {mode === 'list' && (
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
               <tr>
-                <td colSpan={data.columns.length || 1} className="muted empty">
-                  Nessun record trovato.
-                </td>
+                {data?.columns.map((c) => (
+                  <th key={c.key} onClick={() => toggleSort(c.key)} className="sortable">
+                    {c.label} {sort === c.key ? (dir === 'asc' ? '▲' : '▼') : ''}
+                  </th>
+                ))}
               </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-      {pages > 1 && (
+            </thead>
+            <tbody>
+              {data?.items.map((r) => (
+                <tr key={r.id} onClick={() => nav(`/m/${name}/${r.id}`)} className="clickable">
+                  {data.columns.map((c, i) => {
+                    const f = fieldOf(c.key);
+                    const cell =
+                      c.key === 'ownerId' ? (
+                        data.refs.users[r.ownerId]
+                      ) : c.key === 'createdAt' || c.key === 'updatedAt' ? (
+                        formatDateTime(c.key === 'createdAt' ? r.createdAt : r.updatedAt)
+                      ) : f ? (
+                        <FieldValue field={f} value={r.data[c.key]} refs={data.refs} />
+                      ) : null;
+                    return (
+                      <td key={c.key}>
+                        {i === 0 ? (
+                          <Link to={`/m/${name}/${r.id}`} onClick={(e) => e.stopPropagation()}>
+                            {r.data[c.key] != null && f && ['text', 'email', 'phone'].includes(f.type)
+                              ? String(r.data[c.key])
+                              : r.label || '(senza nome)'}
+                          </Link>
+                        ) : (
+                          cell
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+              {data?.items.length === 0 && (
+                <tr>
+                  <td colSpan={data.columns.length || 1} className="muted empty">
+                    Nessun record trovato.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {mode === 'list' && pages > 1 && (
         <div className="pager">
           <button disabled={page <= 1} onClick={() => update({ page: String(page - 1) })}>
             ‹ Precedente

@@ -15,6 +15,7 @@ import { OutboxWorker } from './events/outbox.worker';
 import { MetadataController } from './metadata/metadata.controller';
 import { MetadataService } from './metadata/metadata.service';
 import { CalendarController } from './records/calendar.controller';
+import { CommentsController } from './records/comments.controller';
 import { LeadConversionService } from './records/lead-conversion.service';
 import { LeadsController } from './records/leads.controller';
 import { LinesController } from './records/lines.controller';
@@ -46,6 +47,7 @@ export class AppModule {
         CalendarController,
         LinesController,
         LeadsController,
+        CommentsController,
         ReportsController,
         ListViewsController,
         AdminController,

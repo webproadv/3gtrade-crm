@@ -904,3 +904,27 @@ describe('cliente unico B2B/B2C', () => {
     expect(rel.body.find((r: any) => r.field === 'parent_account_id').total).toBe(1);
   });
 });
+
+describe('commenti sui record', () => {
+  it('chi vede il record legge e scrive commenti; elimina solo i propri', async () => {
+    const acc = (await as('rep1').post('/records/Accounts', { data: { name: 'Cliente con commenti' } })).body.id;
+    const url = `/records/Accounts/${acc}/comments`;
+    const c1 = await as('rep1').post(url, { body: 'Richiamare lunedì' });
+    expect(c1.status).toBe(201);
+    const c2 = await as('manager').post(url, { body: 'Ok, ci penso io' });
+    expect(c2.status).toBe(201);
+    expect((await as('rep1').post(url, { body: '   ' })).status).toBe(400);
+    expect((await as('rep2').get(url)).status).toBe(403);
+    expect((await as('rep2').post(url, { body: 'x' })).status).toBe(403);
+
+    const list = await as('rep1').get(url);
+    expect(list.body.map((c: any) => [c.body, c.canDelete])).toEqual([
+      ['Richiamare lunedì', true],
+      ['Ok, ci penso io', false],
+    ]);
+    expect((await as('rep1').del(`${url}/${c2.body.id}`)).status).toBe(403);
+    expect((await as('rep1').del(`${url}/${c1.body.id}`)).status).toBe(200);
+    expect((await as('admin').del(`${url}/${c2.body.id}`)).status).toBe(200);
+    expect((await as('rep1').get(url)).body).toHaveLength(0);
+  });
+});

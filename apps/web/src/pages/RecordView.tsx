@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { groupByBlock } from '../components/blocks';
+import { Comments } from '../components/Comments';
 import { ConvertLead } from '../components/ConvertLead';
 import { FieldValue } from '../components/FieldValue';
 import { formatDateTime } from '../components/format';
@@ -148,6 +149,7 @@ export function RecordView() {
             </section>
           ))}
           {mod.hasLines && <LinesEditor mod={mod} rec={rec} onSaved={reload} />}
+          <Comments module={name} id={id} />
           {related.map((r) => {
             const relMod = module(r.module);
             const cols =

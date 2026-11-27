@@ -324,3 +324,17 @@ label.inline { display: flex; align-items: center; gap: 8px; }
 }
 .toolbar.wrap { flex-wrap: wrap; }
 .card h3 { font-size: 14px; margin: 16px 0 8px; }
+.comments { list-style: none; padding: 0; margin: 0 0 12px; display: flex; flex-direction: column; gap: 10px; }
+.comments li { border-left: 3px solid var(--border); padding-left: 10px; }
+.comment-body { white-space: pre-wrap; margin-top: 2px; }
+.comment-new { display: flex; gap: 8px; align-items: flex-start; }
+.comment-new textarea { flex: 1; }
+.board { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 8px; align-items: flex-start; }
+.board-col { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; min-width: 240px; width: 240px; flex: 0 0 auto; }
+.board-col.over { outline: 2px dashed var(--accent); }
+.board-col h3 { font-size: 13px; margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; gap: 8px; }
+.board-cards { padding: 8px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+.board-card { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: var(--surface); cursor: grab; font-size: 13px; }
+.board-card a { font-weight: 600; }
+.view-switch { display: inline-flex; gap: 0; }
+.view-switch button.active { background: var(--accent); color: #fff; }
