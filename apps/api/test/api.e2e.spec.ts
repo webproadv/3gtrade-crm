@@ -349,12 +349,25 @@ describe('attività e calendario', () => {
     await client.query(`DELETE FROM profile_module_permissions WHERE module = 'Activities'`);
     await client.query(`DELETE FROM modules WHERE name = 'Activities'`);
     await client.query(`DELETE FROM fields WHERE module = 'Accounts' AND name = 'pec'`);
+    // un elenco con un valore personalizzato dell'azienda e senza uno dei valori standard
+    await client.query(
+      `UPDATE fields SET options = jsonb_set(options, '{values}', '["Cliente", "Prospect", "Partner", "Fornitore", "Rivenditore"]')
+        WHERE module = 'Accounts' AND name = 'account_type'`,
+    );
     await client.query('COMMIT');
     client.release();
     expect((await as('other').get('/records/Activities')).status).toBe(404);
 
     const added = await ensureStandardModules(pool);
-    expect(added).toEqual(['other: campo Accounts.pec', 'other: modulo Activities']);
+    expect(added).toEqual([
+      'other: valori Accounts.account_type (Concorrente)',
+      'other: campo Accounts.pec',
+      'other: modulo Activities',
+    ]);
+    const meta = await as('other').get('/modules/Accounts');
+    expect(meta.body.fields.find((f: any) => f.name === 'account_type').options.values).toEqual([
+      'Cliente', 'Prospect', 'Partner', 'Fornitore', 'Rivenditore', 'Concorrente',
+    ]);
     expect((await as('other').get('/records/Activities')).status).toBe(200);
     expect(await ensureStandardModules(pool)).toEqual([]);
   });
@@ -671,6 +684,22 @@ describe('PDA e prodotti', () => {
     expect((await as('admin').get(`/records/SalesOrders/${ids.order}/lines`)).status).toBe(404);
     // le PDA non si eliminano con il profilo vendite
     expect((await as('pda_rep1').del(`/records/SalesOrders/${ids.order}`)).status).toBe(403);
+  });
+
+  it('valida percentuali e annullamento della PDA', async () => {
+    const pct = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, {
+      data: { down_payment_pct: 30, start_works_pct: 40, balance_pct: 40 },
+    });
+    expect(pct.status).toBe(400);
+    expect(pct.body.errors.balance_pct).toBeDefined();
+    const ok = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, {
+      data: { down_payment_pct: 30, start_works_pct: 40, balance_pct: 30, financing_approval: 'In attesa', pod: 'IT001E12345678' },
+    });
+    expect(ok.status).toBe(200);
+    const cancel = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { status: 'Annullata' } });
+    expect(cancel.body.errors.cancel_date).toBeDefined();
+    const st = await as('pda_rep1').patch(`/records/SalesOrders/${ids.order}`, { data: { status: 'In approvazione finanziaria' } });
+    expect(st.body.data.status).toBe('In approvazione finanziaria');
   });
 
   it('i totali delle PDA si usano nei rapporti', async () => {

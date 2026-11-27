@@ -117,13 +117,26 @@ export async function ensureStandardModules(pool: Pool): Promise<string[]> {
           added.push(`${t.slug}: modulo ${m.name}`);
           continue;
         }
-        const fields = new Set(
-          (await tx.query(`SELECT name FROM fields WHERE module = $1`, [m.name])).rows.map((r) => r.name),
+        const existingFields = new Map<string, { id: string; options: { values?: string[] } }>(
+          (await tx.query(`SELECT id, name, options FROM fields WHERE module = $1`, [m.name])).rows.map((r) => [r.name, r]),
         );
         const max = (await tx.query(`SELECT coalesce(max(sort_order), 0) AS m FROM fields WHERE module = $1`, [m.name])).rows[0].m;
         let order = max;
         for (const f of m.fields) {
-          if (fields.has(f.name)) continue;
+          const cur = existingFields.get(f.name);
+          if (cur) {
+            // nuovi valori degli elenchi standard: aggiunti in coda, senza togliere quelli dell'azienda
+            const have = cur.options.values ?? [];
+            const missing = (f.options?.values ?? []).filter((v) => !have.includes(v));
+            if (missing.length && (f.type === 'picklist' || f.type === 'multipicklist')) {
+              await tx.query(`UPDATE fields SET options = jsonb_set(options, '{values}', $2::jsonb) WHERE id = $1`, [
+                cur.id,
+                JSON.stringify([...have, ...missing]),
+              ]);
+              added.push(`${t.slug}: valori ${m.name}.${f.name} (${missing.join(', ')})`);
+            }
+            continue;
+          }
           await insertField(tx, t.id, m.name, f, (order += 10));
           added.push(`${t.slug}: campo ${m.name}.${f.name}`);
         }
