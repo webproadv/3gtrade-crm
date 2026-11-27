@@ -168,6 +168,23 @@ export class ReportsService {
   }
 
   /**
+   * Condizione SQL (alias r) dei record del modulo che rispettano i filtri, per i workflow.
+   * strict = true rifiuta campi sconosciuti o non visibili (al salvataggio del workflow).
+   */
+  async filterWhere(tx: Tx, sec: SecurityContext, module: string, filters: ReportConfig['filters'], strict = false) {
+    const config: ReportConfig = {
+      columns: ['ownerId'],
+      filters,
+      groupOrder: 'key',
+      totals: [],
+      chart: 'none',
+      groupBy: null,
+    };
+    const plan = await this.plan(tx, sec, module, config, strict);
+    return { where: plan.where, params: [...plan.params] };
+  }
+
+  /**
    * Traduce la definizione in SQL. I campi che l'utente non vede vengono ignorati (strict = false)
    * oppure rifiutati (strict = true, al salvataggio).
    */

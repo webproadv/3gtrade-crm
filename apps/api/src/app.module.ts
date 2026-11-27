@@ -28,6 +28,11 @@ import { ScopeService } from './security/scope.service';
 import { SecurityService } from './security/security.service';
 import { ListViewsController } from './views/list-views.controller';
 import { ListViewsService } from './views/list-views.service';
+import { MailerService } from './workflows/mailer.service';
+import { WorkflowEngine } from './workflows/workflow-engine';
+import { WorkflowHandler, WorkflowScheduler } from './workflows/workflow-runtime';
+import { RecordWorkflowsController, WorkflowsController } from './workflows/workflows.controller';
+import { WorkflowsService } from './workflows/workflows.service';
 
 @Module({})
 export class AppModule {
@@ -50,6 +55,8 @@ export class AppModule {
         CommentsController,
         ReportsController,
         ListViewsController,
+        WorkflowsController,
+        RecordWorkflowsController,
         AdminController,
         UsersController,
       ],
@@ -64,8 +71,17 @@ export class AppModule {
         ReportsService,
         ListViewsService,
         AdminService,
+        MailerService,
+        WorkflowsService,
+        WorkflowEngine,
+        WorkflowScheduler,
         LoggingHandler,
-        { provide: EVENT_HANDLERS, useFactory: (log: LoggingHandler) => [log], inject: [LoggingHandler] },
+        WorkflowHandler,
+        {
+          provide: EVENT_HANDLERS,
+          useFactory: (log: LoggingHandler, wf: WorkflowHandler) => [log, wf],
+          inject: [LoggingHandler, WorkflowHandler],
+        },
         OutboxWorker,
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_FILTER, useClass: ErrorsFilter },

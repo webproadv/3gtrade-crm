@@ -451,6 +451,7 @@ export const STANDARD_MODULES: StandardModule[] = [
       { name: 'lead_id', label: 'Lead', type: 'relation', block: 'Collegamenti', options: { module: 'Leads' } },
       { name: 'account_id', label: 'Azienda', type: 'relation', block: 'Collegamenti', inList: true, options: { module: 'Accounts' } },
       { name: 'contact_id', label: 'Contatto', type: 'relation', block: 'Collegamenti', options: { module: 'Contacts' } },
+      { name: 'sales_order_id', label: 'PDA', type: 'relation', block: 'Collegamenti', options: { module: 'SalesOrders' } },
       {
         name: 'opportunity_id',
         label: 'Opportunità',

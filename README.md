@@ -2,7 +2,7 @@
 
 CRM multi-tenant ispirato a [vtenext](https://www.vtenext.com/), scritto da zero in TypeScript.
 Questo è il **primo nucleo**: anagrafiche, permessi e motore dei moduli guidato da metadati.
-Workflow e BPM arriveranno sopra il sistema di eventi già presente.
+I workflow configurabili girano sul sistema di eventi; il BPM (processi a più passi) arriverà sopra lo stesso motore.
 
 | Strato        | Tecnologia                                   |
 | ------------- | -------------------------------------------- |
@@ -46,6 +46,15 @@ Workflow e BPM arriveranno sopra il sistema di eventi già presente.
 - **Automatismi al salvataggio**: opportunità chiusa vinta = probabilità 100%, chiusa persa = 0%; PDA annullata
   senza data = data di annullamento di oggi; una PDA che ne sostituisce un'altra porta quella vecchia allo stato
   "Sostituita"; le statistiche del cliente si ricalcolano a ogni PDA o opportunità salvata.
+- **Workflow** configurabili dall'amministrazione, come in vtenext: *quando* (alla creazione, a ogni
+  salvataggio, al cambio di un campo, la prima volta che le condizioni sono vere, a una scadenza come "7 giorni
+  dopo l'ultimo cambio di Stato" o "7 giorni prima della data di chiusura", oppure con un pulsante sulla scheda),
+  *se* (condizioni sui campi, come nei rapporti) e *allora* (aggiornare un campo, creare un'attività collegata,
+  preparare un'email con segnaposto `$campo$` e `$relazione.campo$`). Ogni esecuzione finisce nel registro del
+  workflow, errori compresi. **Al cliente non parte mai nulla in automatico**: le email per i clienti restano
+  bozze sulla scheda, che l'utente controlla e invia con il pulsante **Invia**; partono da sole solo gli avvisi
+  interni agli utenti del CRM. Ogni azienda nuova parte con quattro workflow di esempio (Welcome Letter alla
+  firma della PDA, sollecito dei documenti dopo 7 giorni, promemoria di chiusura delle opportunità, follow-up).
 - **Attività e calendario**: chiamate, appuntamenti, compiti ed email collegati ad aziende, contatti e
   opportunità; calendario mensile e settimanale filtrabile per utente; "Le mie attività" in panoramica
   (in ritardo, oggi, prossimi giorni) con completamento in un clic.
@@ -81,7 +90,9 @@ docker compose stop              # ferma, i dati restano nel volume db-data
 ```
 
 Variabili utili: `CRM_PORT` (porta sul computer, predefinita 8080), `JWT_SECRET`, `SEED_DEMO`
-(`true` crea l'azienda demo al primo avvio).
+(`true` crea l'azienda demo al primo avvio), `SMTP_URL` e `MAIL_FROM` (server di posta per inviare le
+email; `SMTP_URL=json` simula l'invio senza spedire nulla), `WORKFLOW_INTERVAL_MS` (ogni quanto si
+controllano i workflow a tempo, predefinito 5 minuti).
 
 ## Pubblicarlo online
 
@@ -176,6 +187,10 @@ Tutte sotto `/api`, autenticate con `Authorization: Bearer <token>`.
 | `POST /leads/:id/convert`                  | converte il lead in cliente, contatto e opportunità |
 | `GET /list-views?module=`, `POST /list-views`, `GET/PATCH/DELETE /list-views/:id` | viste salvate delle liste |
 | `POST /list-views/query`                   | esegue una vista (`viewId` o `config`) con `q`, `owner`, `sort`, `page` |
+| `GET/POST /workflows`, `GET/PATCH/DELETE /workflows/:id`, `GET /workflows/:id/runs` | workflow e registro (solo amministratori) |
+| `POST /workflows/run-scheduled`            | esegue subito i controlli dei workflow a tempo |
+| `GET /records/:module/:id/workflows`, `POST .../workflows/:wid/run` | pulsanti dei workflow manuali sulla scheda |
+| `GET/POST /records/:module/:id/emails`, `PATCH .../emails/:eid`, `POST .../emails/:eid/send\|discard` | email della scheda: bozze, invio deciso dall'utente |
 | `GET/POST /reports`, `GET/PATCH/DELETE /reports/:id` | rapporti salvati                  |
 | `GET /reports/:id/run`, `POST /reports/run` | esegue un rapporto salvato o un'anteprima      |
 | `GET /reports/:id/export?part=rows\|summary` | CSV per Excel (dettaglio o riepilogo)       |

@@ -292,7 +292,7 @@ export class RecordsService {
       )
     ).rows[0];
     await this.history(tx, sec, row.id, 'create', data);
-    await enqueueEvent(tx, sec.tenantId, 'record.created', { module, recordId: row.id, userId: sec.userId, data });
+    await enqueueEvent(tx, sec.tenantId, 'record.created', { module, recordId: row.id, userId: sec.userId, data, viaWorkflow: sec.viaWorkflow });
     await this.afterWrite(tx, sec, module, row.id, null, data);
     return this.get(tx, sec, module, row.id);
   }
@@ -349,7 +349,7 @@ export class RecordsService {
     if (!Object.keys(changes).length) return;
     await tx.query(`UPDATE records SET data = $2, updated_at = now() WHERE id = $1`, [row.id, JSON.stringify(next)]);
     await this.history(tx, sec, row.id, 'update', changes);
-    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: row.id, userId: sec.userId, changes });
+    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: row.id, userId: sec.userId, changes, viaWorkflow: sec.viaWorkflow });
     await this.afterWrite(tx, sec, module, row.id, row.data, next);
   }
 
@@ -400,7 +400,7 @@ export class RecordsService {
       [id, JSON.stringify(next), computeLabel(mod.labelFields, next), ownerId],
     );
     await this.history(tx, sec, id, 'update', changes);
-    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: id, userId: sec.userId, changes });
+    await enqueueEvent(tx, sec.tenantId, 'record.updated', { module, recordId: id, userId: sec.userId, changes, viaWorkflow: sec.viaWorkflow });
     await this.afterWrite(tx, sec, module, id, row.data, next);
     return this.get(tx, sec, module, id);
   }
@@ -411,7 +411,7 @@ export class RecordsService {
     if (!canAccessRecord(sec, mod.sharing, row.owner_id, 'write')) throw new ForbiddenException('Record non eliminabile');
     await tx.query(`UPDATE records SET deleted_at = now() WHERE id = $1`, [id]);
     await this.history(tx, sec, id, 'delete', {});
-    await enqueueEvent(tx, sec.tenantId, 'record.deleted', { module, recordId: id, userId: sec.userId });
+    await enqueueEvent(tx, sec.tenantId, 'record.deleted', { module, recordId: id, userId: sec.userId, viaWorkflow: sec.viaWorkflow });
     await this.afterWrite(tx, sec, module, id, row.data, null);
     return { ok: true };
   }

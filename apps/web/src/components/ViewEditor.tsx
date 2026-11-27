@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import { api, ApiError } from '../api';
-import { FilterValue } from '../pages/reports/ReportEditor';
-import { columnOptions, opLabel, opsFor } from '../pages/reports/reportOptions';
-import type { FilterOp, ListViewDef, Module, ViewConfig } from '../types';
+import { columnOptions } from '../pages/reports/reportOptions';
+import type { ListViewDef, Module, ViewConfig } from '../types';
+import { ConditionsEditor } from './ConditionsEditor';
 
 /** Crea o modifica una vista salvata della lista: nome, visibilità, colonne, filtri e ordinamento. */
 export function ViewEditor({
@@ -23,7 +23,6 @@ export function ViewEditor({
   onCancel: () => void;
 }) {
   const options = useMemo(() => columnOptions(mod), [mod]);
-  const byKey = useMemo(() => new Map(options.map((o) => [o.key, o])), [options]);
   const [name, setName] = useState(view?.name ?? '');
   const [shared, setShared] = useState(view?.shared ?? false);
   const [config, setConfig] = useState<ViewConfig>(view?.config ?? initial);
@@ -31,8 +30,6 @@ export function ViewEditor({
   const [error, setError] = useState('');
 
   const patch = (p: Partial<ViewConfig>) => setConfig((c) => ({ ...c, ...p }));
-  const setFilter = (i: number, f: Partial<ViewConfig['filters'][number]>) =>
-    patch({ filters: config.filters.map((x, k) => (k === i ? { ...x, ...f } : x)) });
   const toggleColumn = (key: string) =>
     patch({ columns: config.columns.includes(key) ? config.columns.filter((c) => c !== key) : [...config.columns, key] });
 
@@ -88,50 +85,13 @@ export function ViewEditor({
 
       <h3>Filtri</h3>
       {config.filters.length === 0 && <p className="muted small">Nessun filtro: la vista mostra tutti i record che puoi vedere.</p>}
-      {config.filters.map((f, i) => {
-        const col = byKey.get(f.field);
-        return (
-          <div className="filter-row" key={i}>
-            <select
-              value={f.field}
-              onChange={(e) => {
-                const c = byKey.get(e.target.value)!;
-                setFilter(i, { field: c.key, op: opsFor(c.type)[0], value: undefined });
-              }}
-            >
-              {options.map((o) => (
-                <option key={o.key} value={o.key}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-            {col && (
-              <select value={f.op} onChange={(e) => setFilter(i, { op: e.target.value as FilterOp, value: undefined })}>
-                {opsFor(col.type).map((op) => (
-                  <option key={op} value={op}>
-                    {opLabel(col.type, op)}
-                  </option>
-                ))}
-              </select>
-            )}
-            {col && f.op !== 'empty' && f.op !== 'notEmpty' && (
-              <FilterValue col={col} op={f.op} value={f.value} users={users} onChange={(value) => setFilter(i, { value })} />
-            )}
-            <button className="link danger" onClick={() => patch({ filters: config.filters.filter((_, k) => k !== i) })}>
-              Togli
-            </button>
-            {errors[`filters.${i}`] && <span className="field-error">{errors[`filters.${i}`]}</span>}
-          </div>
-        );
-      })}
-      <button
-        onClick={() => {
-          const c = options[0];
-          if (c) patch({ filters: [...config.filters, { field: c.key, op: opsFor(c.type)[0] }] });
-        }}
-      >
-        + Aggiungi filtro
-      </button>
+      <ConditionsEditor
+        mod={mod}
+        filters={config.filters}
+        users={users}
+        errors={errors}
+        onChange={(filters) => patch({ filters })}
+      />
 
       <h3>Ordinamento</h3>
       <div className="filter-row">

@@ -50,6 +50,20 @@ Francoforte. Non servono conoscenze tecniche: si fa tutto dal sito di Render.
 I valori `INIT_*` servono solo al primo avvio: se li cambi in seguito non succede nulla
 all'azienda già creata.
 
+## Invio delle email (facoltativo)
+
+Le email preparate dai workflow (es. la Welcome Letter) si inviano dalla scheda con il pulsante
+**Invia**. Per farle partire serve la casella da cui spedirle: nel servizio apri **Environment** e
+compila
+
+| Variabile   | Cosa scrivere                                                                 |
+| ----------- | ----------------------------------------------------------------------------- |
+| `SMTP_URL`  | dati del server di posta, es. `smtps://info%403gtrade.it:password@smtp.tuoprovider.it:465` (la `@` dell'utente si scrive `%40`) |
+| `MAIL_FROM` | il mittente, es. `3Gtrade <info@3gtrade.it>`                                  |
+
+I dati del server (indirizzo e porta SMTP) li trovi nelle istruzioni del tuo provider di posta.
+Finché non sono impostati il CRM prepara comunque le bozze, ma non le invia.
+
 ## Aggiornamenti
 
 Ogni volta che una modifica viene unita su **main**, Render ripubblica il CRM da solo in pochi

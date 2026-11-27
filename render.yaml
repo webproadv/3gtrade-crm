@@ -29,6 +29,12 @@ services:
         sync: false
       - key: INIT_ADMIN_PASSWORD
         sync: false
+      # Server di posta per le email del CRM (facoltativo, si può impostare anche dopo).
+      # Esempio: smtps://utente%40dominio.it:password@smtp.dominio.it:465
+      - key: SMTP_URL
+        sync: false
+      - key: MAIL_FROM
+        sync: false
 
 databases:
   - name: 3gtrade-crm-db

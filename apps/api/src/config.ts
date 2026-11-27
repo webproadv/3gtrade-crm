@@ -5,6 +5,11 @@ export interface AppConfig {
   port: number;
   workerEnabled: boolean;
   workerIntervalMs: number;
+  /** controlli dei workflow a tempo e invio delle email in coda */
+  workflowIntervalMs: number;
+  /** server di posta, es. smtps://utente:password@smtp.esempio.it:465 ("json" = nessun invio reale, per i test) */
+  smtpUrl: string;
+  mailFrom: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
@@ -17,6 +22,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     port: Number(env.PORT ?? 3000),
     workerEnabled: (env.WORKER_ENABLED ?? 'true') !== 'false',
     workerIntervalMs: Number(env.WORKER_INTERVAL_MS ?? 1000),
+    workflowIntervalMs: Number(env.WORKFLOW_INTERVAL_MS ?? 5 * 60 * 1000),
+    smtpUrl: env.SMTP_URL ?? '',
+    mailFrom: env.MAIL_FROM ?? '',
   };
 }
 

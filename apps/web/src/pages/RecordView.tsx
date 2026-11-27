@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../api';
 import { groupByBlock } from '../components/blocks';
 import { Comments } from '../components/Comments';
+import { RecordEmails } from '../components/RecordEmails';
 import { ConvertLead } from '../components/ConvertLead';
 import { FieldValue } from '../components/FieldValue';
 import { formatDateTime } from '../components/format';
@@ -38,6 +39,9 @@ export function RecordView() {
   const [tab, setTab] = useState<'details' | 'history'>('details');
   const [error, setError] = useState('');
   const [converting, setConverting] = useState(false);
+  const [buttons, setButtons] = useState<{ id: string; name: string; description: string; buttonLabel: string }[]>([]);
+  const [emailsKey, setEmailsKey] = useState(0);
+  const [notice, setNotice] = useState('');
 
   useEffect(() => {
     setRec(null);
@@ -46,6 +50,8 @@ export function RecordView() {
     api<CrmRecord>(`/records/${name}/${id}`).then(setRec).catch((e) => setError(e.message));
     api<Related[]>(`/records/${name}/${id}/related`).then(setRelated).catch(() => setRelated([]));
     api<HistoryItem[]>(`/records/${name}/${id}/history`).then(setHistory).catch(() => setHistory([]));
+    api(`/records/${name}/${id}/workflows`).then(setButtons).catch(() => setButtons([]));
+    setNotice('');
   }, [name, id]);
 
   if (error) return <div className="error">{error}</div>;
@@ -95,6 +101,29 @@ export function RecordView() {
               Converti
             </button>
           )}
+          {rec.permissions?.edit &&
+            buttons.map((b) => (
+              <button
+                key={b.id}
+                title={b.description}
+                onClick={async () => {
+                  setNotice('');
+                  try {
+                    const r = await api<{ message: string }>(`/records/${name}/${id}/workflows/${b.id}/run`, {
+                      method: 'POST',
+                      body: {},
+                    });
+                    setNotice(`${b.buttonLabel}: ${r.message || 'fatto'}.`);
+                    reload();
+                    setEmailsKey((k) => k + 1);
+                  } catch (e) {
+                    setNotice((e as Error).message);
+                  }
+                }}
+              >
+                {b.buttonLabel}
+              </button>
+            ))}
           {mod.hasLines && (
             <button onClick={() => window.open(`/m/${name}/${id}/print`, '_blank')}>Stampa</button>
           )}
@@ -114,6 +143,7 @@ export function RecordView() {
         Assegnato a {rec.refs?.users[rec.ownerId]} · creato il {formatDateTime(rec.createdAt)} · modificato il{' '}
         {formatDateTime(rec.updatedAt)}
       </div>
+      {notice && <div className="notice">{notice}</div>}
       <div className="tabs">
         <button className={tab === 'details' ? 'active' : ''} onClick={() => setTab('details')}>
           Dettagli
@@ -149,6 +179,13 @@ export function RecordView() {
             </section>
           ))}
           {mod.hasLines && <LinesEditor mod={mod} rec={rec} onSaved={reload} />}
+          <RecordEmails
+            module={name}
+            id={id}
+            canEdit={!!rec.permissions?.edit}
+            reloadKey={emailsKey}
+            defaultTo={typeof rec.data.email === 'string' ? rec.data.email : ''}
+          />
           <Comments module={name} id={id} />
           {related.map((r) => {
             const relMod = module(r.module);
