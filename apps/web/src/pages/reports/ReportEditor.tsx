@@ -393,7 +393,7 @@ export function ReportEditor() {
   );
 }
 
-function FilterValue({
+export function FilterValue({
   col,
   op,
   value,

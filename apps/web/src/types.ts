@@ -146,3 +146,30 @@ export interface DocLine {
   vat?: number;
   total?: number;
 }
+
+export interface ViewConfig {
+  columns: string[];
+  filters: ReportConfig['filters'];
+  sort?: { field: string; dir: 'asc' | 'desc' } | null;
+}
+
+export interface ListViewDef {
+  id: string;
+  name: string;
+  module: string;
+  shared: boolean;
+  ownerId: string;
+  ownerName?: string;
+  config: ViewConfig;
+  canEdit: boolean;
+}
+
+export interface ViewPage {
+  columns: { key: string; label: string; type: FieldType }[];
+  items: CrmRecord[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hidden: string[];
+  refs: Refs;
+}

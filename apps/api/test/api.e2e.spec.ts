@@ -772,3 +772,83 @@ describe('lead e conversione', () => {
     expect([400, 404]).toContain(bad.status);
   });
 });
+
+describe('viste salvate delle liste', () => {
+  let v: Awaited<ReturnType<typeof provisionTenant>>;
+  const ids: Record<string, string> = {};
+
+  beforeAll(async () => {
+    v = await provisionTenant(pool, {
+      slug: 'viste',
+      name: 'Viste',
+      admin: { email: 'admin@viste.test', password: PASSWORD, firstName: 'Ada', lastName: 'Viste' },
+    });
+    tokens.vAdmin = await login('viste', 'admin@viste.test');
+    for (const u of ['rep1', 'rep2']) {
+      await as('vAdmin').post('/admin/users', {
+        email: `${u}@viste.test`, password: PASSWORD, firstName: u, lastName: 'Viste', roleId: v.roles.salesRep,
+      });
+      tokens[`v_${u}`] = await login('viste', `${u}@viste.test`);
+    }
+    const mk = (who: string, data: object) => as(who).post('/records/Leads', { data });
+    await mk('v_rep1', { last_name: 'Alfa', lead_status: 'Nuovo', budget: 5000 });
+    await mk('v_rep1', { last_name: 'Beta', lead_status: 'Da contattare', budget: 20000 });
+    await mk('v_rep1', { last_name: 'Gamma', lead_status: 'Da contattare', budget: 1000 });
+    await mk('vAdmin', { last_name: 'Delta', lead_status: 'Da contattare', budget: 9000 });
+  });
+
+  it('esegue una definizione con filtri, ordinamento, ricerca e assegnatario', async () => {
+    const config = {
+      columns: ['last_name', 'lead_status', 'budget', 'ownerId'],
+      filters: [{ field: 'lead_status', op: 'eq', value: 'Da contattare' }],
+      sort: { field: 'budget', dir: 'desc' },
+    };
+    const all = await as('vAdmin').post('/list-views/query', { module: 'Leads', config });
+    expect(all.status).toBe(201);
+    expect(all.body.items.map((x: any) => x.data.last_name)).toEqual(['Beta', 'Delta', 'Gamma']);
+    expect(all.body.columns.map((c: any) => c.key)).toEqual(config.columns);
+
+    const mine = await as('vAdmin').post('/list-views/query', { module: 'Leads', config, owner: 'mine' });
+    expect(mine.body.items.map((x: any) => x.data.last_name)).toEqual(['Delta']);
+    const others = await as('vAdmin').post('/list-views/query', { module: 'Leads', config, owner: 'others', sort: { field: 'last_name', dir: 'asc' } });
+    expect(others.body.items.map((x: any) => x.data.last_name)).toEqual(['Beta', 'Gamma']);
+    const search = await as('vAdmin').post('/list-views/query', { module: 'Leads', config, q: 'gam' });
+    expect(search.body.total).toBe(1);
+
+    // il commerciale vede solo i propri record anche attraverso la vista
+    const rep2 = await as('v_rep2').post('/list-views/query', { module: 'Leads', config });
+    expect(rep2.body.total).toBe(0);
+  });
+
+  it('salva viste personali e pubbliche e ne controlla i permessi', async () => {
+    const body = {
+      name: 'Da contattare',
+      module: 'Leads',
+      shared: true,
+      config: { columns: ['last_name', 'budget'], filters: [{ field: 'lead_status', op: 'eq', value: 'Da contattare' }] },
+    };
+    const pub = await as('v_rep1').post('/list-views', body);
+    expect(pub.status).toBe(201);
+    ids.pub = pub.body.id;
+    const priv = await as('v_rep1').post('/list-views', { ...body, name: 'Le mie', shared: false });
+    ids.priv = priv.body.id;
+
+    const seenBy2 = await as('v_rep2').get('/list-views?module=Leads');
+    expect(seenBy2.body.map((x: any) => x.name)).toEqual(['Da contattare']);
+    expect(seenBy2.body[0].canEdit).toBe(false);
+    expect((await as('v_rep2').get(`/list-views/${ids.priv}`)).status).toBe(404);
+    expect((await as('v_rep2').patch(`/list-views/${ids.pub}`, body)).status).toBe(403);
+    expect((await as('v_rep2').del(`/list-views/${ids.pub}`)).status).toBe(403);
+
+    const run = await as('vAdmin').post('/list-views/query', { module: 'Leads', viewId: ids.pub });
+    expect(run.body.total).toBe(3);
+    expect((await as('vAdmin').post('/list-views/query', { module: 'Accounts', viewId: ids.pub })).status).toBe(400);
+
+    const bad = await as('v_rep1').post('/list-views', { ...body, config: { columns: ['nope'], filters: [] } });
+    expect(bad.status).toBe(400);
+    expect((await as('other').get(`/list-views/${ids.pub}`)).status).toBe(404);
+
+    expect((await as('vAdmin').patch(`/list-views/${ids.pub}`, { ...body, name: 'Rinominata' })).body.name).toBe('Rinominata');
+    expect((await as('v_rep1').del(`/list-views/${ids.priv}`)).status).toBe(200);
+  });
+});

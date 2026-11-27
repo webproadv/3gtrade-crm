@@ -25,6 +25,8 @@ import { ReportsController } from './reports/reports.controller';
 import { ReportsService } from './reports/reports.service';
 import { ScopeService } from './security/scope.service';
 import { SecurityService } from './security/security.service';
+import { ListViewsController } from './views/list-views.controller';
+import { ListViewsService } from './views/list-views.service';
 
 @Module({})
 export class AppModule {
@@ -45,6 +47,7 @@ export class AppModule {
         LinesController,
         LeadsController,
         ReportsController,
+        ListViewsController,
         AdminController,
         UsersController,
       ],
@@ -57,6 +60,7 @@ export class AppModule {
         LinesService,
         LeadConversionService,
         ReportsService,
+        ListViewsService,
         AdminService,
         LoggingHandler,
         { provide: EVENT_HANDLERS, useFactory: (log: LoggingHandler) => [log], inject: [LoggingHandler] },
